@@ -6,8 +6,9 @@ import os
 import zipfile
 import tarfile
 import requests
+import re
 from pathlib import Path
-from typing import List, Optional, Callable
+from typing import List, Optional, Callable, Dict, Any
 
 
 # Hardcoded list of stable MySQL versions (more reliable than web scraping)
@@ -178,3 +179,110 @@ def validate_installation(bin_path: str) -> bool:
 
     except Exception:
         return False
+
+
+def extract_version_from_path(path: Path) -> Optional[str]:
+    """
+    Extract MySQL version from directory path
+    
+    Args:
+        path: Path to MySQL installation directory
+        
+    Returns:
+        Version string (e.g., "8.0.40") or None if cannot extract
+    """
+    # Common patterns:
+    # mysql-8.0.40-winx64
+    # mysql-8.0.40
+    # mysql-5.7.44-linux-glibc2.28-x86_64
+    
+    dir_name = path.name
+    # Match mysql-X.Y.Z pattern
+    match = re.search(r'mysql-(\d+\.\d+\.\d+)', dir_name, re.IGNORECASE)
+    if match:
+        return match.group(1)
+    
+    # Try to find version.txt or similar files
+    version_file = path / 'VERSION'
+    if version_file.exists():
+        try:
+            content = version_file.read_text(encoding='utf-8')
+            # Look for version pattern in file
+            match = re.search(r'(\d+\.\d+\.\d+)', content)
+            if match:
+                return match.group(1)
+        except Exception:
+            pass
+    
+    return None
+
+
+def detect_installed_versions() -> List[Dict[str, Any]]:
+    """
+    Detect installed MySQL versions in default directories
+    
+    Returns:
+        List of dicts with keys: version, bin_path, is_valid, install_path
+    """
+    installed = []
+    
+    try:
+        from src.db_clone_tool.config import get_default_mysql_dir
+        default_dir = get_default_mysql_dir()
+        
+        if not default_dir.exists():
+            return installed
+        
+        # Scan default directory for MySQL installations
+        # Look for subdirectories that might contain MySQL installations
+        for item in default_dir.iterdir():
+            if not item.is_dir():
+                continue
+            
+            # Skip downloads directory
+            if item.name == 'downloads':
+                continue
+            
+            # Try to find bin directory
+            bin_dir = None
+            # Check if this directory itself is a bin directory
+            if item.name == 'bin' and validate_installation(str(item)):
+                bin_dir = item
+                install_path = item.parent
+            else:
+                # Check for bin subdirectory
+                potential_bin = item / 'bin'
+                if potential_bin.exists() and potential_bin.is_dir():
+                    if validate_installation(str(potential_bin)):
+                        bin_dir = potential_bin
+                        install_path = item
+                else:
+                    # Check nested structure (mysql-8.0.40-winx64/mysql-8.0.40-winx64/bin)
+                    for nested_dir in item.rglob('bin'):
+                        if nested_dir.is_dir() and validate_installation(str(nested_dir)):
+                            bin_dir = nested_dir
+                            install_path = nested_dir.parent.parent if nested_dir.parent.name == 'bin' else nested_dir.parent
+                            break
+            
+            if bin_dir:
+                # Extract version from path
+                version = extract_version_from_path(install_path)
+                if version:
+                    is_valid = validate_installation(str(bin_dir))
+                    installed.append({
+                        'version': version,
+                        'bin_path': str(bin_dir),
+                        'is_valid': is_valid,
+                        'install_path': str(install_path)
+                    })
+        
+        # Sort by version (newest first)
+        installed.sort(key=lambda x: tuple(map(int, x['version'].split('.'))), reverse=True)
+        
+    except Exception as e:
+        # Log error but don't fail
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error detecting installed MySQL versions: {e}")
+    
+    return installed

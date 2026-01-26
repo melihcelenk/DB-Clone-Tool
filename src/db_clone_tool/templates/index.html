@@ -143,10 +143,10 @@
                     How would you like to configure MySQL?
                 </p>
                 <div style="display: flex; gap: 15px; justify-content: center;">
-                    <button type="button" class="btn btn-choice btn-primary" onclick="showDownloadForm()" style="flex: 1; max-width: 250px; padding: 20px; font-size: 16px;">
+                    <button type="button" class="btn btn-choice btn-primary" onclick="handleShowDownloadForm()" style="flex: 1; max-width: 250px; padding: 20px; font-size: 16px;">
                         Download MySQL Automatically
                     </button>
-                    <button type="button" class="btn btn-choice btn-secondary" onclick="showManualPathForm()" style="flex: 1; max-width: 250px; padding: 20px; font-size: 16px;">
+                    <button type="button" class="btn btn-choice btn-secondary" onclick="handleShowManualPathForm()" style="flex: 1; max-width: 250px; padding: 20px; font-size: 16px;">
                         I Will Select My Own MySQL Directory
                     </button>
                 </div>
@@ -173,13 +173,31 @@
 
             <!-- Download Form (Hidden by default) -->
             <div id="download-form" style="display: none;">
-                <div class="form-group">
-                    <label>MySQL Version</label>
-                    <select id="mysql-version-select" style="width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 6px; font-size: 14px;">
-                        <option value="">Loading versions...</option>
-                    </select>
-                </div>
+                <h3 style="font-size: 16px; margin-bottom: 10px; color: #333;">Select MySQL Version</h3>
+                <p style="color: #666; font-size: 13px; margin-bottom: 15px;">
+                    Choose an installed version or download a new one.
+                </p>
                 
+                <!-- Loading State -->
+                <div id="versions-loading" style="text-align: center; padding: 20px; color: #666;">
+                    <p>Loading versions...</p>
+                </div>
+
+                <!-- Version List Container -->
+                <div id="mysql-versions-list" style="display: none; max-height: 400px; overflow-y: auto; margin-bottom: 15px;">
+                    <!-- Installed Versions Section -->
+                    <div id="installed-versions-section" style="margin-bottom: 20px;">
+                        <h4 style="font-size: 14px; font-weight: 600; color: #333; margin-bottom: 10px; padding-bottom: 5px; border-bottom: 1px solid #e0e0e0;">Installed</h4>
+                        <div id="installed-versions-container"></div>
+                    </div>
+
+                    <!-- Available Versions Section -->
+                    <div id="available-versions-section">
+                        <h4 style="font-size: 14px; font-weight: 600; color: #333; margin-bottom: 10px; padding-bottom: 5px; border-bottom: 1px solid #e0e0e0;">Available for Download</h4>
+                        <div id="available-versions-container"></div>
+                    </div>
+                </div>
+
                 <!-- Advanced Options Toggle -->
                 <div style="margin: 15px 0;">
                     <label style="display: flex; align-items: center; cursor: pointer; color: #666; font-size: 14px;">
@@ -199,7 +217,6 @@
                     </div>
                 </div>
 
-                <button type="button" class="btn btn-success" onclick="downloadMySQL()" style="margin-top: 15px;">Download & Install</button>
                 <button type="button" class="btn btn-link" onclick="showConfigChoiceScreen()" style="margin-top: 10px; color: #667eea; text-decoration: underline; background: none; border: none; cursor: pointer; padding: 5px;">← Back to options</button>
             </div>
         </div>

@@ -647,6 +647,14 @@ function showConfigChoiceScreen() {
     document.getElementById('config-result').style.display = 'none';
 }
 
+// Wrapper for HTML onclick (async functions can't be called directly from onclick)
+function handleShowManualPathForm() {
+    showManualPathForm().catch(error => {
+        console.error('Error showing manual path form:', error);
+        alert('Error loading manual path form: ' + error.message);
+    });
+}
+
 // Show manual path form
 async function showManualPathForm() {
     document.getElementById('config-choice-screen').style.display = 'none';
@@ -659,14 +667,22 @@ async function showManualPathForm() {
     document.getElementById('config-result').style.display = 'none';
 }
 
+// Wrapper for HTML onclick (async functions can't be called directly from onclick)
+function handleShowDownloadForm() {
+    showDownloadForm().catch(error => {
+        console.error('Error showing download form:', error);
+        alert('Error loading download form: ' + error.message);
+    });
+}
+
 // Show download form
 async function showDownloadForm() {
     document.getElementById('config-choice-screen').style.display = 'none';
     document.getElementById('manual-path-form').style.display = 'none';
     document.getElementById('download-form').style.display = 'block';
     
-    // Load MySQL versions
-    await loadMySQLVersions();
+    // Load MySQL versions with installed status
+    await loadMySQLVersionsWithStatus();
     
     // Load default directory for placeholder
     await loadDefaultDirectory();
@@ -899,29 +915,365 @@ function escapeHtml(text) {
 
 // MySQL Download Functions
 
-// Load MySQL versions when config modal is shown
-async function loadMySQLVersions() {
+// Load MySQL versions with installed status
+async function loadMySQLVersionsWithStatus() {
+    const loadingDiv = document.getElementById('versions-loading');
+    const versionsList = document.getElementById('mysql-versions-list');
+    const installedContainer = document.getElementById('installed-versions-container');
+    const availableContainer = document.getElementById('available-versions-container');
+
+    if (!loadingDiv || !versionsList || !installedContainer || !availableContainer) {
+        console.error('Required elements not found for version list');
+        return;
+    }
+
+    // Show loading
+    loadingDiv.style.display = 'block';
+    versionsList.style.display = 'none';
+    installedContainer.innerHTML = '';
+    availableContainer.innerHTML = '';
+
     try {
         const response = await fetch('/api/mysql/versions');
+        if (!response.ok) {
+            throw new Error(`Server error: ${response.status}`);
+        }
         const data = await response.json();
 
-        const select = document.getElementById('mysql-version-select');
-        select.innerHTML = '';
+        // Separate installed and available versions
+        const installedVersions = [];
+        const availableVersions = [];
 
-        data.versions.forEach(version => {
-            const option = document.createElement('option');
-            option.value = version;
-            option.textContent = version === data.recommended ? `${version} (Recommended)` : version;
-            if (version === data.recommended) {
-                option.selected = true;
+        data.versions.forEach(versionInfo => {
+            if (versionInfo.is_installed || versionInfo.installed) {
+                installedVersions.push(versionInfo);
+            } else {
+                availableVersions.push(versionInfo);
             }
-            select.appendChild(option);
         });
+
+        // Render installed versions
+        if (installedVersions.length > 0) {
+            installedVersions.forEach(versionInfo => {
+                const item = renderVersionItem(versionInfo);
+                installedContainer.appendChild(item);
+            });
+        } else {
+            installedContainer.innerHTML = '<p style="color: #999; font-size: 13px; padding: 10px;">No installed versions found.</p>';
+        }
+
+        // Render available versions
+        if (availableVersions.length > 0) {
+            availableVersions.forEach(versionInfo => {
+                const item = renderVersionItem(versionInfo);
+                availableContainer.appendChild(item);
+            });
+        } else {
+            availableContainer.innerHTML = '<p style="color: #999; font-size: 13px; padding: 10px;">No versions available.</p>';
+        }
+
+        // Hide loading, show list
+        loadingDiv.style.display = 'none';
+        versionsList.style.display = 'block';
+
     } catch (error) {
         console.error('Failed to load MySQL versions:', error);
-        const select = document.getElementById('mysql-version-select');
-        select.innerHTML = '<option value="">Failed to load versions</option>';
+        if (loadingDiv) {
+            loadingDiv.innerHTML = `<p style="color: #d32f2f;">Error loading versions: ${error.message}</p>`;
+        }
     }
+}
+
+// Render a version item
+function renderVersionItem(versionInfo) {
+    const item = document.createElement('div');
+    item.className = 'version-item';
+    item.setAttribute('data-version', versionInfo.version);
+
+    const header = document.createElement('div');
+    header.className = 'version-header';
+
+    // Status icon (left side, only if installed)
+    const isInstalled = versionInfo.is_installed || versionInfo.installed;
+    if (isInstalled) {
+        const statusIcon = document.createElement('span');
+        statusIcon.className = 'version-status-icon ' + (versionInfo.is_valid ? 'valid' : 'invalid');
+        header.appendChild(statusIcon);
+    }
+
+    const title = document.createElement('div');
+    title.className = 'version-title';
+
+    // Version number
+    const versionText = document.createElement('span');
+    versionText.textContent = `MySQL ${versionInfo.version}`;
+    title.appendChild(versionText);
+
+    // Recommended badge
+    if (versionInfo.recommended) {
+        const recommendedBadge = document.createElement('span');
+        recommendedBadge.className = 'version-badge recommended';
+        recommendedBadge.textContent = 'Recommended';
+        title.appendChild(recommendedBadge);
+    }
+
+    // Installed badge
+    if (isInstalled) {
+        const installedBadge = document.createElement('span');
+        installedBadge.className = 'version-badge ' + (versionInfo.is_valid ? 'installed' : 'invalid');
+        installedBadge.textContent = versionInfo.is_valid ? '✓ Installed' : '⚠ Invalid';
+        title.appendChild(installedBadge);
+    }
+
+    header.appendChild(title);
+
+    // Action buttons (right side)
+    const actionsDiv = document.createElement('div');
+    actionsDiv.className = 'version-actions';
+
+    if (isInstalled) {
+        // Use button
+        const useBtn = document.createElement('button');
+        useBtn.className = 'btn btn-success btn-small';
+        useBtn.textContent = 'Use';
+        useBtn.onclick = () => useMySQLVersion(versionInfo.version, versionInfo.bin_path);
+        actionsDiv.appendChild(useBtn);
+
+        // Repair button (only if invalid)
+        if (!versionInfo.is_valid) {
+            const repairBtn = document.createElement('button');
+            repairBtn.className = 'btn btn-secondary btn-small';
+            repairBtn.textContent = 'Repair';
+            repairBtn.onclick = () => repairMySQLVersion(versionInfo.version, versionInfo.install_path);
+            actionsDiv.appendChild(repairBtn);
+        }
+    } else {
+        // Download button
+        const downloadBtn = document.createElement('button');
+        downloadBtn.className = 'btn btn-success btn-small';
+        downloadBtn.textContent = 'Download';
+        downloadBtn.onclick = () => downloadMySQLVersion(versionInfo.version);
+        actionsDiv.appendChild(downloadBtn);
+    }
+
+    header.appendChild(actionsDiv);
+    
+    // Expand indicator (if installed with path)
+    let pathContainer = null;
+    if (isInstalled && versionInfo.bin_path) {
+        const expandIcon = document.createElement('span');
+        expandIcon.className = 'version-expand-icon';
+        expandIcon.innerHTML = '▼'; // Down arrow
+        header.appendChild(expandIcon);
+        
+        // Make card clickable
+        item.classList.add('version-item-expandable');
+        item.style.cursor = 'pointer';
+        
+        // Path container (hidden by default)
+        pathContainer = document.createElement('div');
+        pathContainer.className = 'version-path-container';
+        pathContainer.style.display = 'none';
+        
+        const pathContent = document.createElement('div');
+        pathContent.className = 'version-path';
+        pathContent.textContent = versionInfo.bin_path;
+        pathContainer.appendChild(pathContent);
+        
+        // Toggle on card click (but not on button clicks)
+        item.addEventListener('click', (e) => {
+            // Don't expand if clicking on buttons
+            if (e.target.closest('.btn') || e.target.closest('.version-actions')) {
+                return;
+            }
+            
+            const isExpanded = pathContainer.style.display !== 'none';
+            pathContainer.style.display = isExpanded ? 'none' : 'block';
+            expandIcon.innerHTML = isExpanded ? '▼' : '▲';
+            item.classList.toggle('version-item-expanded', !isExpanded);
+        });
+    }
+    
+    item.appendChild(header);
+    
+    // Add path container after header
+    if (pathContainer) {
+        item.appendChild(pathContainer);
+    }
+
+    return item;
+}
+
+// Use an existing MySQL installation
+async function useMySQLVersion(version, binPath) {
+    try {
+        const response = await fetch('/api/mysql/use', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                version: version,
+                bin_path: binPath
+            })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || `Server error: ${response.status}`);
+        }
+
+        const data = await response.json();
+
+        if (data.success) {
+            // Show success message
+            alert(`MySQL ${version} configured successfully!`);
+            // Close modals
+            closeModal('config-modal');
+            // Reload config display
+            await loadConfig();
+        } else {
+            throw new Error(data.error || 'Failed to use MySQL version');
+        }
+    } catch (error) {
+        console.error('Use MySQL version error:', error);
+        alert('Error: ' + error.message);
+    }
+}
+
+// Repair a MySQL installation
+async function repairMySQLVersion(version, installPath) {
+    if (!confirm(`Repair MySQL ${version}? This will re-extract the installation if the archive is available.`)) {
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/mysql/repair', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                version: version,
+                install_path: installPath
+            })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            if (errorData.requires_download) {
+                if (confirm(`Archive not found. Would you like to download MySQL ${version} again?`)) {
+                    downloadMySQLVersion(version);
+                }
+            } else {
+                throw new Error(errorData.error || `Server error: ${response.status}`);
+            }
+            return;
+        }
+
+        const data = await response.json();
+
+        if (data.success) {
+            alert(`MySQL ${version} repaired successfully!`);
+            // Reload versions to update status
+            await loadMySQLVersionsWithStatus();
+        } else {
+            throw new Error(data.error || 'Repair failed');
+        }
+    } catch (error) {
+        console.error('Repair MySQL version error:', error);
+        alert('Error: ' + error.message);
+    }
+}
+
+// Download a specific MySQL version
+async function downloadMySQLVersion(version) {
+    const dest = document.getElementById('mysql-dest-input').value.trim();
+
+    // Show download modal
+    document.getElementById('download-version').textContent = `MySQL ${version}`;
+    document.getElementById('download-progress-fill').style.width = '0%';
+    document.getElementById('download-progress-fill').textContent = '0%';
+    document.getElementById('download-status').textContent = 'Preparing download...';
+    document.getElementById('download-status').style.color = '#666';
+    document.getElementById('download-result').style.display = 'none';
+    document.getElementById('download-path-info').textContent = '';
+    document.getElementById('cancel-download-btn').style.display = 'block';
+    document.getElementById('return-from-download-btn').style.display = 'none';
+    showModal('download-modal');
+
+    try {
+        const response = await fetch('/api/mysql/download', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                version: version,
+                destination: dest || ''
+            })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || `Server error: ${response.status} ${response.statusText}`);
+        }
+
+        const result = await response.json();
+
+        if (result.success) {
+            document.getElementById('download-progress-fill').style.width = '100%';
+            document.getElementById('download-progress-fill').textContent = '100%';
+            document.getElementById('download-status').textContent = 'Download completed!';
+            document.getElementById('download-status').style.color = '#28a745';
+
+            const downloadResultDiv = document.getElementById('download-result');
+            downloadResultDiv.className = 'result success';
+            downloadResultDiv.textContent = '✓ Download completed successfully!';
+            downloadResultDiv.style.display = 'block';
+
+            if (result.bin_path) {
+                document.getElementById('download-path-info').textContent = `Installed at: ${result.bin_path}`;
+                // Save to config
+                await fetch('/api/config/mysql-bin', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({path: result.bin_path})
+                });
+                await loadConfig(); // Reload main config display
+            }
+
+            document.getElementById('cancel-download-btn').style.display = 'none';
+            document.getElementById('return-from-download-btn').style.display = 'block';
+
+            // Reload versions list to show new installation
+            await loadMySQLVersionsWithStatus();
+        } else {
+            throw new Error(result.error || 'Download failed');
+        }
+    } catch (error) {
+        console.error('Download error:', error);
+        let errorMessage = error.message;
+        if (error.response) {
+            try {
+                const errorData = await error.response.json();
+                errorMessage = errorData.error || error.message;
+            } catch (e) {
+                errorMessage = error.response.statusText || error.message;
+            }
+        }
+
+        document.getElementById('download-status').textContent = 'Error: ' + errorMessage;
+        document.getElementById('download-status').style.color = '#d32f2f';
+        document.getElementById('download-progress-fill').style.width = '0%';
+
+        const downloadResultDiv = document.getElementById('download-result');
+        downloadResultDiv.className = 'result error';
+        downloadResultDiv.textContent = '✗ Download failed: ' + errorMessage;
+        downloadResultDiv.style.display = 'block';
+
+        document.getElementById('cancel-download-btn').style.display = 'none';
+        document.getElementById('return-from-download-btn').style.display = 'block';
+    }
+}
+
+// Legacy function for backward compatibility (now calls new function)
+async function loadMySQLVersions() {
+    await loadMySQLVersionsWithStatus();
 }
 
 // Note: showConfigModal now shows choice screen directly
@@ -984,99 +1336,11 @@ function showModal(modalId) {
     document.getElementById(modalId).style.display = 'flex';
 }
 
-// Download MySQL
+// Download MySQL (legacy - now redirects to downloadMySQLVersion)
 async function downloadMySQL() {
-    const version = document.getElementById('mysql-version-select').value;
-    const dest = document.getElementById('mysql-dest-input').value.trim();
-
-    if (!version) {
-        alert('Please select a MySQL version');
-        return;
-    }
-
-    // Show download modal
-    document.getElementById('download-version').textContent = `MySQL ${version}`;
-    document.getElementById('download-progress-fill').style.width = '0%';
-    document.getElementById('download-status').textContent = 'Preparing download...';
-    showModal('download-modal');
-
-    try {
-        // Call download API
-        const response = await fetch('/api/mysql/download', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({
-                version: version,
-                destination: dest || ''  // Empty string for default
-            })
-        });
-
-        // Check if response is ok
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error || `Server error: ${response.status} ${response.statusText}`);
-        }
-
-        const result = await response.json();
-
-        if (result.success) {
-            // Update progress to 100%
-            document.getElementById('download-progress-fill').style.width = '100%';
-            document.getElementById('download-progress-fill').textContent = '100%';
-            
-            // Hide status message and show success message
-            document.getElementById('download-status').style.display = 'none';
-            const successMessage = document.getElementById('download-success-message');
-            successMessage.style.display = 'block';
-            
-            // Show bin path if available
-            if (result.bin_path) {
-                document.getElementById('download-path-info').textContent = `Installed at: ${result.bin_path}`;
-                
-                // Save to config
-                await fetch('/api/config/mysql-bin', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({path: result.bin_path})
-                });
-
-                // Reload config
-                await loadConfig();
-            }
-
-            // Hide Cancel button and show Return button
-            const cancelBtn = document.getElementById('cancel-download-btn');
-            const returnBtn = document.getElementById('download-return-btn');
-            if (cancelBtn) cancelBtn.style.display = 'none';
-            if (returnBtn) returnBtn.style.display = 'block';
-        } else {
-            throw new Error(result.error || 'Download failed');
-        }
-    } catch (error) {
-        console.error('Download error:', error);
-        
-        // Try to get error message from response if available
-        let errorMessage = error.message;
-        if (error.response) {
-            try {
-                const errorData = await error.response.json();
-                errorMessage = errorData.error || error.message;
-            } catch (e) {
-                // If response is not JSON, use status text
-                errorMessage = error.response.statusText || error.message;
-            }
-        }
-        
-        document.getElementById('download-status').textContent = 'Error: ' + errorMessage;
-        document.getElementById('download-status').style.color = '#d32f2f';
-        document.getElementById('download-progress-fill').style.width = '0%';
-
-        // Show error and close after 5 seconds (longer for user to read)
-        setTimeout(() => {
-            closeModal('download-modal');
-            alert('Download failed: ' + errorMessage);
-        }, 5000);
-    }
+    // This function is kept for backward compatibility but should not be used
+    // Users should click "Download" button on version items instead
+    alert('Please select a version from the list and click "Download"');
 }
 
 // Cancel download
