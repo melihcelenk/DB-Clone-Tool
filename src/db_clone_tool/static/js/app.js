@@ -634,19 +634,82 @@ function showAddConnectionModal() {
 
 // Show config modal
 function showConfigModal() {
-    // Load current config value into input
-    const pathDisplay = document.getElementById('mysql-bin-path');
-    const currentPath = pathDisplay.value || pathDisplay.textContent || '';
+    // Show modal and start with choice screen
+    document.getElementById('config-modal').style.display = 'flex';
+    showConfigChoiceScreen();
+}
+
+// Show initial choice screen
+function showConfigChoiceScreen() {
+    document.getElementById('config-choice-screen').style.display = 'block';
+    document.getElementById('manual-path-form').style.display = 'none';
+    document.getElementById('download-form').style.display = 'none';
+    document.getElementById('config-result').style.display = 'none';
+}
+
+// Show manual path form
+async function showManualPathForm() {
+    document.getElementById('config-choice-screen').style.display = 'none';
+    document.getElementById('manual-path-form').style.display = 'block';
+    document.getElementById('download-form').style.display = 'none';
     
-    // Only set if it's a real path (not placeholder text)
-    if (currentPath && currentPath !== 'Not configured' && currentPath.trim() !== '') {
-        document.getElementById('mysql-bin-input').value = currentPath;
-    } else {
-        document.getElementById('mysql-bin-input').value = '';
-    }
+    // Load current config value into input if exists
+    await loadConfigToModal();
     
     document.getElementById('config-result').style.display = 'none';
-    document.getElementById('config-modal').style.display = 'flex';
+}
+
+// Show download form
+async function showDownloadForm() {
+    document.getElementById('config-choice-screen').style.display = 'none';
+    document.getElementById('manual-path-form').style.display = 'none';
+    document.getElementById('download-form').style.display = 'block';
+    
+    // Load MySQL versions
+    await loadMySQLVersions();
+    
+    // Load default directory for placeholder
+    await loadDefaultDirectory();
+    
+    // Reset advanced options
+    document.getElementById('advanced-options-toggle').checked = false;
+    document.getElementById('destination-directory-group').style.display = 'none';
+    document.getElementById('mysql-dest-input').value = '';
+}
+
+// Toggle advanced options (show/hide destination directory)
+function toggleAdvancedOptions() {
+    const toggle = document.getElementById('advanced-options-toggle');
+    const destGroup = document.getElementById('destination-directory-group');
+    
+    if (toggle.checked) {
+        destGroup.style.display = 'block';
+        // Load default directory if not already loaded
+        loadDefaultDirectory();
+    } else {
+        destGroup.style.display = 'none';
+        document.getElementById('mysql-dest-input').value = '';
+    }
+}
+
+// Load default directory from API and update placeholder
+async function loadDefaultDirectory() {
+    try {
+        const response = await fetch('/api/mysql/default-directory');
+        if (response.ok) {
+            const data = await response.json();
+            const destInput = document.getElementById('mysql-dest-input');
+            if (destInput) {
+                destInput.placeholder = `Leave empty for: ${data.path}`;
+            }
+        }
+    } catch (error) {
+        console.error('Failed to load default directory:', error);
+        const destInput = document.getElementById('mysql-dest-input');
+        if (destInput) {
+            destInput.placeholder = 'Leave empty for default location';
+        }
+    }
 }
 
 // Save config
@@ -705,6 +768,11 @@ async function loadConfig() {
 // Close modal
 function closeModal(modalId) {
     document.getElementById(modalId).style.display = 'none';
+    
+    // Reset config modal to choice screen when closed
+    if (modalId === 'config-modal') {
+        showConfigChoiceScreen();
+    }
 }
 
 // Show result
@@ -856,13 +924,9 @@ async function loadMySQLVersions() {
     }
 }
 
-// Override showConfigModal to load versions and config
-const originalShowConfigModal = showConfigModal;
-showConfigModal = async function() {
-    originalShowConfigModal();
-    loadMySQLVersions();
-    await loadConfigToModal();
-};
+// Note: showConfigModal now shows choice screen directly
+// loadMySQLVersions is called when download form is shown
+// loadConfigToModal is called when manual path form is shown
 
 // Test MySQL path
 async function testMySQLPath() {
@@ -959,10 +1023,16 @@ async function downloadMySQL() {
             // Update progress to 100%
             document.getElementById('download-progress-fill').style.width = '100%';
             document.getElementById('download-progress-fill').textContent = '100%';
-            document.getElementById('download-status').textContent = 'Download completed!';
-
-            // Update MySQL bin path in config
+            
+            // Hide status message and show success message
+            document.getElementById('download-status').style.display = 'none';
+            const successMessage = document.getElementById('download-success-message');
+            successMessage.style.display = 'block';
+            
+            // Show bin path if available
             if (result.bin_path) {
+                document.getElementById('download-path-info').textContent = `Installed at: ${result.bin_path}`;
+                
                 // Save to config
                 await fetch('/api/config/mysql-bin', {
                     method: 'POST',
@@ -974,12 +1044,11 @@ async function downloadMySQL() {
                 await loadConfig();
             }
 
-            // Close download modal after 2 seconds
-            setTimeout(() => {
-                closeModal('download-modal');
-                closeModal('config-modal');
-                alert(`MySQL ${version} downloaded and configured successfully!`);
-            }, 2000);
+            // Hide Cancel button and show Return button
+            const cancelBtn = document.getElementById('cancel-download-btn');
+            const returnBtn = document.getElementById('download-return-btn');
+            if (cancelBtn) cancelBtn.style.display = 'none';
+            if (returnBtn) returnBtn.style.display = 'block';
         } else {
             throw new Error(result.error || 'Download failed');
         }
@@ -1010,9 +1079,43 @@ async function downloadMySQL() {
     }
 }
 
-// Cancel download (placeholder)
+// Cancel download
 function cancelDownload() {
     closeModal('download-modal');
+    // Reset download modal state
+    resetDownloadModal();
+}
+
+// Return from download (after successful download)
+function returnFromDownload() {
+    closeModal('download-modal');
+    closeModal('config-modal');
+    // Reset download modal state
+    resetDownloadModal();
+}
+
+// Reset download modal to initial state
+function resetDownloadModal() {
+    const progressFill = document.getElementById('download-progress-fill');
+    const status = document.getElementById('download-status');
+    const successMsg = document.getElementById('download-success-message');
+    const pathInfo = document.getElementById('download-path-info');
+    const cancelBtn = document.getElementById('cancel-download-btn');
+    const returnBtn = document.getElementById('download-return-btn');
+    
+    if (progressFill) {
+        progressFill.style.width = '0%';
+        progressFill.textContent = '0%';
+    }
+    if (status) {
+        status.textContent = 'Preparing download...';
+        status.style.display = 'block';
+        status.style.color = '#666';
+    }
+    if (successMsg) successMsg.style.display = 'none';
+    if (pathInfo) pathInfo.textContent = '';
+    if (cancelBtn) cancelBtn.style.display = 'block';
+    if (returnBtn) returnBtn.style.display = 'none';
 }
 
 // Removed browse directory functions - web browsers cannot access full filesystem paths
@@ -1020,12 +1123,15 @@ function cancelDownload() {
 
 // Load existing config to modal
 async function loadConfigToModal() {
+    // This function is called when manual path form is shown
+    // It's now integrated into showManualPathForm()
     try {
         // Fetch current config from API to ensure we have the latest value
         const response = await fetch('/api/config/mysql-bin');
         const result = await response.json();
         
         const pathInput = document.getElementById('mysql-bin-input');
+        if (!pathInput) return;
         
         if (result.path && result.path.trim() !== '') {
             // Path is configured, set it in the input
@@ -1038,9 +1144,14 @@ async function loadConfigToModal() {
         console.error('Failed to load config to modal:', error);
         // Fallback: try to get from display element
         const pathDisplay = document.getElementById('mysql-bin-path');
-        const currentPath = pathDisplay.value || pathDisplay.textContent || '';
-        if (currentPath && currentPath !== 'Not configured' && currentPath.trim() !== '') {
-            document.getElementById('mysql-bin-input').value = currentPath;
+        if (pathDisplay) {
+            const currentPath = pathDisplay.value || pathDisplay.textContent || '';
+            if (currentPath && currentPath !== 'Not configured' && currentPath.trim() !== '') {
+                const pathInput = document.getElementById('mysql-bin-input');
+                if (pathInput) {
+                    pathInput.value = currentPath;
+                }
+            }
         }
     }
 }

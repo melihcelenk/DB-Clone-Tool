@@ -8,7 +8,7 @@ import uuid
 import os
 import subprocess
 import tempfile
-from src.db_clone_tool import storage, config
+from src.db_clone_tool import storage, config, APP_NAME
 from src.db_clone_tool.db_manager import DatabaseManager
 
 # Base directory
@@ -520,9 +520,24 @@ def health_check():
     """Health check endpoint for Docker and monitoring"""
     return jsonify({
         "status": "healthy",
-        "service": "db-clone-tool",
+        "service": APP_NAME,
         "version": "1.0.0"
     }), 200
+
+
+@api_bp.route('/mysql/default-directory', methods=['GET'])
+def get_default_mysql_directory():
+    """Get the default MySQL installation directory path"""
+    try:
+        from src.db_clone_tool.config import get_default_mysql_dir
+        default_dir = get_default_mysql_dir()
+        return jsonify({
+            "path": str(default_dir),
+            "platform": "windows" if os.name == 'nt' else "unix"
+        })
+    except Exception as e:
+        logger.error(f"Error getting default directory: {e}")
+        return jsonify({"error": str(e)}), 500
 
 
 @api_bp.route('/mysql/download', methods=['POST'])

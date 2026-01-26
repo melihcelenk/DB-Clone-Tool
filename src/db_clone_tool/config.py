@@ -4,6 +4,7 @@ Configuration management for DB Clone Tool
 import os
 import json
 from pathlib import Path
+from src.db_clone_tool import APP_NAME
 
 # Base directory for storing config files
 BASE_DIR = Path(__file__).parent.parent.parent
@@ -17,8 +18,8 @@ def get_default_mysql_dir():
 
     Returns:
         Path: Platform-specific default path for MySQL binaries
-            - Windows: %LOCALAPPDATA%\\db-clone-tool\\mysql
-            - Linux/macOS: ~/.local/share/db-clone-tool/mysql
+            - Windows: %LOCALAPPDATA%\\{APP_NAME}\\mysql
+            - Linux/macOS: ~/.local/share/{APP_NAME}/mysql
 
     Raises:
         KeyError: If required environment variable is not set (Windows: LOCALAPPDATA)
@@ -26,10 +27,10 @@ def get_default_mysql_dir():
     if os.name == 'nt':  # Windows
         # Use LOCALAPPDATA for user-specific portable install
         local_app_data = os.environ['LOCALAPPDATA']
-        return Path(local_app_data) / 'db-clone-tool' / 'mysql'
+        return Path(local_app_data) / APP_NAME / 'mysql'
     else:  # Linux, macOS, other Unix-like
         # Use XDG-like path: ~/.local/share
-        return Path.home() / '.local' / 'share' / 'db-clone-tool' / 'mysql'
+        return Path.home() / '.local' / 'share' / APP_NAME / 'mysql'
 
 def get_mysql_bin_path():
     """Get MySQL bin directory path from config file
@@ -153,7 +154,7 @@ def create_directory_with_fallback(path):
         return True, path, None
     except PermissionError:
         # Try fallback to user home directory
-        fallback_path = Path.home() / '.db-clone-tool' / path.name
+        fallback_path = Path.home() / f'.{APP_NAME}' / path.name
         try:
             fallback_path.mkdir(parents=True, exist_ok=True)
             return True, fallback_path, f"Using fallback directory: {fallback_path}"

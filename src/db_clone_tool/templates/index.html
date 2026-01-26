@@ -137,9 +137,23 @@
                 <button class="close-btn" onclick="closeModal('config-modal')">&times;</button>
             </div>
 
-            <!-- Manual Path Option -->
-            <div style="margin-bottom: 20px; padding-bottom: 20px; border-bottom: 1px solid #e0e0e0;">
-                <h3 style="font-size: 16px; margin-bottom: 10px; color: #333;">Option 1: Manual Path</h3>
+            <!-- Choice Screen (Initial State) -->
+            <div id="config-choice-screen" style="text-align: center; padding: 20px 0;">
+                <p style="color: #666; font-size: 14px; margin-bottom: 30px;">
+                    How would you like to configure MySQL?
+                </p>
+                <div style="display: flex; gap: 15px; justify-content: center;">
+                    <button type="button" class="btn btn-choice btn-primary" onclick="showDownloadForm()" style="flex: 1; max-width: 250px; padding: 20px; font-size: 16px;">
+                        Download MySQL Automatically
+                    </button>
+                    <button type="button" class="btn btn-choice btn-secondary" onclick="showManualPathForm()" style="flex: 1; max-width: 250px; padding: 20px; font-size: 16px;">
+                        I Will Select My Own MySQL Directory
+                    </button>
+                </div>
+            </div>
+
+            <!-- Manual Path Form (Hidden by default) -->
+            <div id="manual-path-form" style="display: none;">
                 <form id="config-form" onsubmit="saveConfig(event)">
                     <div class="form-group">
                         <label>MySQL Bin Directory</label>
@@ -153,29 +167,40 @@
                         <button type="submit" class="btn" style="flex: 1; margin-bottom: 0;">Save Configuration</button>
                         <button type="button" class="btn btn-secondary" onclick="testMySQLPath()" style="flex: 1; margin-bottom: 0; margin-left: 0;">Test Path</button>
                     </div>
+                    <button type="button" class="btn btn-link" onclick="showConfigChoiceScreen()" style="margin-top: 10px; color: #667eea; text-decoration: underline; background: none; border: none; cursor: pointer; padding: 5px;">← Back to options</button>
                 </form>
             </div>
 
-            <!-- Download Option -->
-            <div>
-                <h3 style="font-size: 16px; margin-bottom: 10px; color: #333;">Option 2: Download MySQL</h3>
-                <p style="color: #666; font-size: 13px; margin-bottom: 10px;">
-                    Don't have MySQL installed? Download it automatically.
-                </p>
+            <!-- Download Form (Hidden by default) -->
+            <div id="download-form" style="display: none;">
                 <div class="form-group">
                     <label>MySQL Version</label>
                     <select id="mysql-version-select" style="width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 6px; font-size: 14px;">
                         <option value="">Loading versions...</option>
                     </select>
                 </div>
-                <div class="form-group">
-                    <label>Destination Directory</label>
-                    <input type="text" id="mysql-dest-input" placeholder="C:/mysql (leave empty for default)" style="width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 6px; font-size: 14px;">
-                    <small style="color: #666; font-size: 12px; margin-top: 5px; display: block;">
-                        Where to extract MySQL. Default: tmp/mysql
-                    </small>
+                
+                <!-- Advanced Options Toggle -->
+                <div style="margin: 15px 0;">
+                    <label style="display: flex; align-items: center; cursor: pointer; color: #666; font-size: 14px;">
+                        <input type="checkbox" id="advanced-options-toggle" onchange="toggleAdvancedOptions()" style="margin-right: 8px; width: 18px; height: 18px; cursor: pointer;">
+                        <span>Advanced Options</span>
+                    </label>
                 </div>
-                <button type="button" class="btn btn-success" onclick="downloadMySQL()">Download & Install</button>
+
+                <!-- Destination Directory (Hidden by default) -->
+                <div id="destination-directory-group" style="display: none; margin-top: 15px;">
+                    <div class="form-group">
+                        <label>Destination Directory (Optional)</label>
+                        <input type="text" id="mysql-dest-input" placeholder="Loading default path..." style="width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 6px; font-size: 14px;">
+                        <small style="color: #666; font-size: 12px; margin-top: 5px; display: block;">
+                            Leave empty to use the default location
+                        </small>
+                    </div>
+                </div>
+
+                <button type="button" class="btn btn-success" onclick="downloadMySQL()" style="margin-top: 15px;">Download & Install</button>
+                <button type="button" class="btn btn-link" onclick="showConfigChoiceScreen()" style="margin-top: 10px; color: #667eea; text-decoration: underline; background: none; border: none; cursor: pointer; padding: 5px;">← Back to options</button>
             </div>
         </div>
     </div>
@@ -195,8 +220,16 @@
                     </div>
                 </div>
                 <p id="download-status" style="color: #666; font-size: 14px;">Preparing download...</p>
+                
+                <!-- Success Message (Hidden by default) -->
+                <div id="download-success-message" class="result success" style="display: none; margin-top: 15px; text-align: left;">
+                    <strong>✓ Download completed!</strong>
+                    <p id="download-path-info" style="margin-top: 8px; font-size: 13px; color: #155724; word-break: break-all;"></p>
+                </div>
+                
                 <p style="color: #999; font-size: 12px; margin-top: 20px;">This may take a few minutes depending on your connection speed.</p>
                 <button type="button" class="btn btn-danger" id="cancel-download-btn" onclick="cancelDownload()" style="margin-top: 10px;">Cancel</button>
+                <button type="button" class="btn btn-success" id="download-return-btn" onclick="returnFromDownload()" style="display: none; margin-top: 10px;">Return</button>
             </div>
         </div>
     </div>

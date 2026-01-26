@@ -83,6 +83,55 @@ h1 {
     background: #28a745;
 }
 
+.btn-choice {
+    min-height: 80px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    transition: all 0.3s ease;
+}
+
+.btn-choice:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 20px rgba(102, 126, 234, 0.5);
+}
+
+.btn-link {
+    background: none;
+    border: none;
+    color: #667eea;
+    text-decoration: underline;
+    cursor: pointer;
+    padding: 5px 10px;
+    font-size: 14px;
+    width: auto;
+    margin: 0;
+}
+
+.btn-link:hover {
+    background: none;
+    color: #764ba2;
+    transform: none;
+    box-shadow: none;
+}
+
+/* Advanced options toggle */
+#destination-directory-group {
+    transition: opacity 0.3s ease, max-height 0.3s ease;
+    overflow: hidden;
+}
+
+#destination-directory-group[style*="display: none"] {
+    opacity: 0;
+    max-height: 0;
+}
+
+#destination-directory-group[style*="display: block"] {
+    opacity: 1;
+    max-height: 200px;
+}
+
 .connection-item {
     background: white;
     padding: 12px;
