@@ -474,21 +474,70 @@ Configuration files are stored in `config.local/` directory (not in version cont
 - `config.local/connections.json` - Saved database connections (encrypted passwords)
 - `config.local/config.json` - Application configuration (MySQL bin path)
 
-To get started, copy the example files:
+### MySQL Bin Path Configuration
 
-```bash
-# On Windows
-copy config.local.example\connections.json.example config.local\connections.json
-copy config.local.example\config.json.example config.local\config.json
+**Required:** You must configure the MySQL bin path to use mysqldump/mysql commands.
 
-# On Linux/Mac
-cp config.local.example/connections.json.example config.local/connections.json
-cp config.local.example/config.json.example config.local/config.json
+**Option 1: Manual Path**
+1. Click "Configure" in the right panel
+2. Enter the path to your MySQL bin directory
+3. Click "Test Path" to verify
+4. Click "Save Configuration"
+
+Examples:
+- Windows: `C:/mysql/bin` or `C:/Program Files/mysql-8.0.40-winx64/bin`
+- Linux: `/usr/bin` or `/usr/local/mysql/bin`
+
+**Option 2: Download MySQL (Coming Soon)**
+1. Click "Configure" in the right panel
+2. Select MySQL version from dropdown
+3. Choose destination directory
+4. Click "Download & Install"
+5. Path will be automatically configured
+
+**Note:** The application does not include default MySQL paths. You must configure this before using clone/export/import features.
+
+## API Documentation
+
+### MySQL Management API
+
+#### GET `/api/mysql/versions`
+
+Get list of available MySQL versions for download.
+
+**Response:**
+```json
+{
+  "versions": ["8.0.40", "8.0.39", "5.7.44"],
+  "recommended": "8.0.40"
+}
 ```
 
-Then edit the files with your actual configuration.
+#### POST `/api/mysql/validate`
 
-**Note:** The `config.local/` directory is automatically gitignored to protect your sensitive data.
+Validate a MySQL installation path.
+
+**Request Body:**
+```json
+{
+  "path": "C:/mysql/bin"
+}
+```
+
+**Response:**
+```json
+{
+  "valid": true,
+  "path": "C:/mysql/bin"
+}
+```
+
+## Security
+
+- Passwords are base64 encoded before storage (basic obfuscation)
+- For production use, consider implementing stronger encryption
+- Never commit `config.local/` directory to version control
+- Use environment variables for sensitive data in production
 
 ## Security
 

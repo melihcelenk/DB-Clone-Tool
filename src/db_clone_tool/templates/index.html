@@ -34,7 +34,10 @@
             <div class="config-section">
                 <div class="config-item">
                     <div class="config-label">MySQL Bin Path</div>
-                    <div class="config-value" id="mysql-bin-path">Not configured</div>
+                    <input type="text" id="mysql-bin-path"
+                           placeholder="Not configured - Click Configure to set up"
+                           style="background: #f8f9fa; border: 1px dashed #ccc; cursor: pointer;"
+                           onclick="showConfigModal()" readonly>
                     <button class="btn btn-secondary" onclick="showConfigModal()" style="margin-top: 10px;">Configure</button>
                 </div>
             </div>
@@ -133,17 +136,68 @@
                 <h2 class="modal-title">Configure MySQL Bin Path</h2>
                 <button class="close-btn" onclick="closeModal('config-modal')">&times;</button>
             </div>
-            <form id="config-form" onsubmit="saveConfig(event)">
+
+            <!-- Manual Path Option -->
+            <div style="margin-bottom: 20px; padding-bottom: 20px; border-bottom: 1px solid #e0e0e0;">
+                <h3 style="font-size: 16px; margin-bottom: 10px; color: #333;">Option 1: Manual Path</h3>
+                <form id="config-form" onsubmit="saveConfig(event)">
+                    <div class="form-group">
+                        <label>MySQL Bin Directory</label>
+                        <input type="text" id="mysql-bin-input" required placeholder="C:/mysql/bin or /usr/bin" style="width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 6px; font-size: 14px;">
+                        <small style="color: #666; font-size: 12px; margin-top: 5px; display: block;">
+                            Path to directory containing mysqldump.exe (Windows) or mysqldump (Linux)
+                        </small>
+                    </div>
+                    <div id="config-result" class="result"></div>
+                    <div style="display: flex; gap: 10px; margin-top: 10px;">
+                        <button type="submit" class="btn" style="flex: 1; margin-bottom: 0;">Save Configuration</button>
+                        <button type="button" class="btn btn-secondary" onclick="testMySQLPath()" style="flex: 1; margin-bottom: 0; margin-left: 0;">Test Path</button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Download Option -->
+            <div>
+                <h3 style="font-size: 16px; margin-bottom: 10px; color: #333;">Option 2: Download MySQL</h3>
+                <p style="color: #666; font-size: 13px; margin-bottom: 10px;">
+                    Don't have MySQL installed? Download it automatically.
+                </p>
                 <div class="form-group">
-                    <label>MySQL Bin Directory</label>
-                    <input type="text" id="mysql-bin-input" required placeholder="C:/Program Files/mysql-5.7.44-winx64/bin">
+                    <label>MySQL Version</label>
+                    <select id="mysql-version-select" style="width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 6px; font-size: 14px;">
+                        <option value="">Loading versions...</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Destination Directory</label>
+                    <input type="text" id="mysql-dest-input" placeholder="C:/mysql (leave empty for default)" style="width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 6px; font-size: 14px;">
                     <small style="color: #666; font-size: 12px; margin-top: 5px; display: block;">
-                        Path to directory containing mysqldump.exe (Windows) or mysqldump (Linux)
+                        Where to extract MySQL. Default: tmp/mysql
                     </small>
                 </div>
-                <div id="config-result" class="result"></div>
-                <button type="submit" class="btn">Save Configuration</button>
-            </form>
+                <button type="button" class="btn btn-success" onclick="downloadMySQL()">Download & Install</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MySQL Download Progress Modal -->
+    <div class="modal" id="download-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title">Downloading MySQL</h2>
+                <button class="close-btn" onclick="closeModal('download-modal')">&times;</button>
+            </div>
+            <div style="text-align: center; padding: 20px;">
+                <p id="download-version" style="font-size: 16px; margin-bottom: 20px; font-weight: bold;">MySQL 8.0.40</p>
+                <div class="progress-container" style="margin-bottom: 20px;">
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="download-progress-fill" style="width: 0%;">0%</div>
+                    </div>
+                </div>
+                <p id="download-status" style="color: #666; font-size: 14px;">Preparing download...</p>
+                <p style="color: #999; font-size: 12px; margin-top: 20px;">This may take a few minutes depending on your connection speed.</p>
+                <button type="button" class="btn btn-danger" id="cancel-download-btn" onclick="cancelDownload()" style="margin-top: 10px;">Cancel</button>
+            </div>
         </div>
     </div>
     

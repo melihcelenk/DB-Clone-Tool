@@ -11,26 +11,22 @@ CONFIG_DIR = BASE_DIR / "config.local"
 CONNECTIONS_FILE = CONFIG_DIR / "connections.json"
 CONFIG_FILE = CONFIG_DIR / "config.json"
 
-# Default MySQL bin path (Windows)
-DEFAULT_MYSQL_BIN_WINDOWS = r"C:\Program Files\mysql-5.7.44-winx64\bin"
-DEFAULT_MYSQL_BIN_LINUX = "/usr/bin"
-
-
 def get_mysql_bin_path():
-    """Get MySQL bin directory path from config file"""
+    """Get MySQL bin directory path from config file
+
+    Returns:
+        str: MySQL bin path if configured, empty string otherwise
+    """
     if CONFIG_FILE.exists():
         try:
             with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
-                config = json.load(f)
-                return config.get('mysql_bin_path', '')
+                config_data = json.load(f)
+                return config_data.get('mysql_bin_path', '')
         except Exception:
             pass
-    
-    # Return default based on OS
-    if os.name == 'nt':  # Windows
-        return DEFAULT_MYSQL_BIN_WINDOWS
-    else:  # Linux/Unix
-        return DEFAULT_MYSQL_BIN_LINUX
+
+    # No default - user must configure
+    return ''
 
 
 def set_mysql_bin_path(path):
@@ -50,11 +46,15 @@ def set_mysql_bin_path(path):
 
 
 def get_mysqldump_path():
-    """Get full path to mysqldump executable"""
+    """Get full path to mysqldump executable
+
+    Returns:
+        str or None: Full path to mysqldump executable, or None if not configured
+    """
     bin_path = get_mysql_bin_path()
     if not bin_path:
         return None
-    
+
     if os.name == 'nt':  # Windows
         return os.path.join(bin_path, 'mysqldump.exe')
     else:  # Linux/Unix
@@ -62,11 +62,15 @@ def get_mysqldump_path():
 
 
 def get_mysql_path():
-    """Get full path to mysql executable"""
+    """Get full path to mysql executable
+
+    Returns:
+        str or None: Full path to mysql executable, or None if not configured
+    """
     bin_path = get_mysql_bin_path()
     if not bin_path:
         return None
-    
+
     if os.name == 'nt':  # Windows
         return os.path.join(bin_path, 'mysql.exe')
     else:  # Linux/Unix

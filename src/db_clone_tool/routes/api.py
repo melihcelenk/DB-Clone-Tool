@@ -19,6 +19,12 @@ from src.db_clone_tool.clone_service import (
     get_job_logs,
     cancel_job
 )
+from src.db_clone_tool.mysql_download import (
+    fetch_versions,
+    validate_installation,
+    download_mysql,
+    extract_mysql
+)
 
 logger = logging.getLogger(__name__)
 
@@ -459,4 +465,152 @@ def export_dump():
         
     except Exception as e:
         logger.error(f"Error exporting dump: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# MySQL Download Endpoints
+
+@api_bp.route('/mysql/versions', methods=['GET'])
+def get_mysql_versions():
+    """Get available MySQL versions"""
+    try:
+        versions = fetch_versions()
+        return jsonify({
+            "versions": versions,
+            "recommended": "8.0.40"
+        })
+    except Exception as e:
+        logger.error(f"Error getting MySQL versions: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@api_bp.route('/mysql/validate', methods=['POST'])
+def validate_mysql_path():
+    """Validate MySQL installation path"""
+    try:
+        data = request.get_json()
+
+        if not data or 'path' not in data:
+            return jsonify({
+                "success": False,
+                "error": "Missing 'path' field"
+            }), 400
+
+        bin_path = data['path']
+        is_valid = validate_installation(bin_path)
+
+        if is_valid:
+            return jsonify({
+                "valid": True,
+                "path": bin_path
+            })
+        else:
+            return jsonify({
+                "valid": False,
+                "error": "MySQL executables not found in specified path"
+            })
+
+    except Exception as e:
+        logger.error(f"Error validating MySQL path: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@api_bp.route('/mysql/download', methods=['POST'])
+def download_mysql_api():
+    """Download and install MySQL"""
+    try:
+        data = request.get_json()
+
+        version = data.get('version')
+        destination = data.get('destination', '').strip()
+
+        if not version:
+            return jsonify({
+                "success": False,
+                "error": "Missing 'version' field"
+            }), 400
+
+        # Determine destination directory
+        if destination:
+            dest_dir = Path(destination)
+        else:
+            # Default: tmp/mysql in project directory
+            dest_dir = BASE_DIR / 'tmp' / 'mysql'
+
+        # Ensure destination directory exists
+        try:
+            dest_dir.mkdir(parents=True, exist_ok=True)
+        except PermissionError as e:
+            logger.error(f"Permission denied creating directory {dest_dir}: {e}")
+            return jsonify({
+                "success": False,
+                "error": f"Permission denied: Cannot create directory '{dest_dir}'. Please choose a different location (e.g., C:/mysql or C:/Users/YourName/mysql) or run the application as administrator."
+            }), 403
+        except OSError as e:
+            logger.error(f"OS error creating directory {dest_dir}: {e}")
+            return jsonify({
+                "success": False,
+                "error": f"Cannot create directory '{dest_dir}': {str(e)}. Please choose a different location."
+            }), 400
+
+        # Download MySQL
+        logger.info(f"Downloading MySQL {version} to {dest_dir}")
+        download_dir = dest_dir / 'downloads'
+        try:
+            download_dir.mkdir(parents=True, exist_ok=True)
+        except PermissionError as e:
+            logger.error(f"Permission denied creating download directory {download_dir}: {e}")
+            return jsonify({
+                "success": False,
+                "error": f"Permission denied: Cannot create directory '{download_dir}'. Please choose a different location (e.g., C:/mysql or C:/Users/YourName/mysql) or run the application as administrator."
+            }), 403
+        except OSError as e:
+            logger.error(f"OS error creating download directory {download_dir}: {e}")
+            return jsonify({
+                "success": False,
+                "error": f"Cannot create directory '{download_dir}': {str(e)}. Please choose a different location."
+            }), 400
+
+        zip_path = download_mysql(version, str(download_dir))
+
+        if not zip_path:
+            return jsonify({
+                "success": False,
+                "error": "Failed to download MySQL. Please check your internet connection and try again."
+            }), 500
+
+        # Extract MySQL
+        logger.info(f"Extracting MySQL to {dest_dir}")
+        bin_path = extract_mysql(zip_path, str(dest_dir))
+
+        if not bin_path:
+            return jsonify({
+                "success": False,
+                "error": "Failed to extract MySQL archive. The downloaded file may be corrupted."
+            }), 500
+
+        # Validate installation
+        if not validate_installation(bin_path):
+            return jsonify({
+                "success": False,
+                "error": "MySQL installation validation failed. Required executables not found."
+            }), 500
+
+        # Clean up downloaded ZIP
+        try:
+            os.remove(zip_path)
+        except Exception:
+            pass  # Ignore cleanup errors
+
+        logger.info(f"MySQL {version} installed successfully at {bin_path}")
+
+        return jsonify({
+            "success": True,
+            "bin_path": bin_path,
+            "version": version,
+            "message": f"MySQL {version} installed successfully"
+        })
+
+    except Exception as e:
+        logger.error(f"Error downloading MySQL: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
