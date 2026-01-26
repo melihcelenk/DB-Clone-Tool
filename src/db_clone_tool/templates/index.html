@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MySQL Schema Clone Tool</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h1>🗄️ MySQL Schema Clone Tool</h1>
+        
+        <!-- Left Panel: Connections -->
+        <div class="panel">
+            <h2>Connections</h2>
+            <button class="btn" onclick="showAddConnectionModal()">+ Add Connection</button>
+            <div id="connections-list"></div>
+        </div>
+        
+        <!-- Middle Panel: Schemas -->
+        <div class="panel">
+            <h2>Schemas</h2>
+            <div id="schemas-list">
+                <div class="empty-state">
+                    <div class="empty-state-icon">📋</div>
+                    <p>Select a connection to view schemas</p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Right Panel: Configuration & Import -->
+        <div class="panel">
+            <h2>Configuration</h2>
+            <div class="config-section">
+                <div class="config-item">
+                    <div class="config-label">MySQL Bin Path</div>
+                    <div class="config-value" id="mysql-bin-path">Not configured</div>
+                    <button class="btn btn-secondary" onclick="showConfigModal()" style="margin-top: 10px;">Configure</button>
+                </div>
+            </div>
+            <div class="config-section" id="active-connection-info" style="display: none;">
+                <h3 style="font-size: 14px; margin-bottom: 10px; color: #333;">Active Connection</h3>
+                <div class="config-item">
+                    <div class="config-label">Host</div>
+                    <div class="config-value" id="active-host">-</div>
+                </div>
+                <div class="config-item">
+                    <div class="config-label">Port</div>
+                    <div class="config-value" id="active-port">-</div>
+                </div>
+                <div class="config-item">
+                    <div class="config-label">Database</div>
+                    <div class="config-value" id="active-database">-</div>
+                </div>
+            </div>
+            <div class="config-section">
+                <h3 style="font-size: 14px; margin-bottom: 10px; color: #333;">Import Dump</h3>
+                <div class="config-item">
+                    <div class="config-label">SQL Dump File</div>
+                    <input type="file" id="dump-file-input" accept=".sql" style="width: 100%; padding: 8px; margin-top: 5px;">
+                    <div class="config-label" style="margin-top: 10px;">Target Schema</div>
+                    <select id="import-target-schema-select" style="width: 100%; padding: 8px; margin-top: 5px; border: 2px solid #e0e0e0; border-radius: 6px;">
+                        <option value="">Select target schema...</option>
+                    </select>
+                    <input type="text" id="import-target-schema-input" placeholder="Or enter new schema name" style="width: 100%; padding: 8px; margin-top: 5px; border: 2px solid #e0e0e0; border-radius: 6px;">
+                    <button class="btn btn-success" onclick="importDump()" style="margin-top: 10px; padding: 8px;">Import Dump</button>
+                </div>
+            </div>
+            <div class="config-section">
+                <h3 style="font-size: 14px; margin-bottom: 10px; color: #333;">Export Dump</h3>
+                <div class="config-item">
+                    <div class="config-label">Source Schema</div>
+                    <select id="export-source-schema-select" style="width: 100%; padding: 8px; margin-top: 5px; border: 2px solid #e0e0e0; border-radius: 6px;">
+                        <option value="">Select schema to export...</option>
+                    </select>
+                    <div class="config-label" style="margin-top: 10px;">Export Path (optional)</div>
+                    <input type="text" id="export-path-input" placeholder="Leave empty for default location" style="width: 100%; padding: 8px; margin-top: 5px; border: 2px solid #e0e0e0; border-radius: 6px;">
+                    <button class="btn btn-success" onclick="exportDump()" style="margin-top: 10px; padding: 8px;">Export Dump</button>
+                    <div id="export-result" style="margin-top: 10px; padding: 10px; border-radius: 6px; display: none;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Context Menu -->
+    <div class="context-menu" id="context-menu">
+        <div class="context-menu-item" onclick="duplicateSchema()">Duplicate</div>
+    </div>
+    
+    <!-- Add Connection Modal -->
+    <div class="modal" id="add-connection-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title">Add Connection</h2>
+                <button class="close-btn" onclick="closeModal('add-connection-modal')">&times;</button>
+            </div>
+            <form id="add-connection-form" onsubmit="addConnection(event)">
+                <div class="form-group">
+                    <label>Name</label>
+                    <input type="text" name="name" required placeholder="e.g., Production DB">
+                </div>
+                <div class="form-group">
+                    <label>Host</label>
+                    <input type="text" name="host" required placeholder="localhost">
+                </div>
+                <div class="form-group">
+                    <label>Port</label>
+                    <input type="number" name="port" value="3306" required>
+                </div>
+                <div class="form-group">
+                    <label>User</label>
+                    <input type="text" name="user" required placeholder="root">
+                </div>
+                <div class="form-group">
+                    <label>Password</label>
+                    <input type="password" name="password" required>
+                </div>
+                <div class="form-group">
+                    <label>Database (optional)</label>
+                    <input type="text" name="database" placeholder="Leave empty to connect to all">
+                </div>
+                <div id="connection-result" class="result"></div>
+                <button type="submit" class="btn">Add Connection</button>
+                <button type="button" class="btn btn-secondary" onclick="testConnection()" style="margin-top: 10px;">Test Connection</button>
+            </form>
+        </div>
+    </div>
+    
+    <!-- Config Modal -->
+    <div class="modal" id="config-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title">Configure MySQL Bin Path</h2>
+                <button class="close-btn" onclick="closeModal('config-modal')">&times;</button>
+            </div>
+            <form id="config-form" onsubmit="saveConfig(event)">
+                <div class="form-group">
+                    <label>MySQL Bin Directory</label>
+                    <input type="text" id="mysql-bin-input" required placeholder="C:/Program Files/mysql-5.7.44-winx64/bin">
+                    <small style="color: #666; font-size: 12px; margin-top: 5px; display: block;">
+                        Path to directory containing mysqldump.exe (Windows) or mysqldump (Linux)
+                    </small>
+                </div>
+                <div id="config-result" class="result"></div>
+                <button type="submit" class="btn">Save Configuration</button>
+            </form>
+        </div>
+    </div>
+    
+    <!-- Clone Modal -->
+    <div class="modal" id="clone-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title">Clone Schema</h2>
+                <button class="close-btn" onclick="closeCloneModal()">&times;</button>
+            </div>
+            <form id="clone-form" onsubmit="startClone(event)">
+                <div class="form-group">
+                    <label>Source Schema</label>
+                    <select id="source-schema-select" required style="width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 6px; font-size: 14px;">
+                        <option value="">Select source schema...</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Target Schema</label>
+                    <select id="target-schema-select" style="width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 6px; font-size: 14px; margin-bottom: 5px;">
+                        <option value="">Select existing schema or enter new name below...</option>
+                    </select>
+                    <input type="text" id="target-schema-input" placeholder="Or enter new schema name (e.g., backup_6f)" style="width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 6px; font-size: 14px;">
+                    <small style="color: #666; font-size: 12px; margin-top: 5px; display: block;">If target schema exists, it will be dropped and recreated</small>
+                </div>
+                <div class="progress-container" id="progress-container" style="display: none;">
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progress-fill" style="width: 0%;">0%</div>
+                    </div>
+                </div>
+                <div class="log-container" id="clone-logs" style="display: none;"></div>
+                <div id="clone-result" class="result"></div>
+                <button type="submit" class="btn" id="clone-btn">Start Clone</button>
+                <button type="button" class="btn btn-danger" id="cancel-clone-btn" onclick="cancelClone()" style="display: none; margin-top: 10px;">Cancel</button>
+                <button type="button" class="btn btn-success" id="return-home-btn" onclick="returnToHome()" style="display: none; margin-top: 10px;">Return to Home</button>
+            </form>
+        </div>
+    </div>
+    
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
