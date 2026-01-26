@@ -515,6 +515,16 @@ def validate_mysql_path():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+@api_bp.route('/health', methods=['GET'])
+def health_check():
+    """Health check endpoint for Docker and monitoring"""
+    return jsonify({
+        "status": "healthy",
+        "service": "db-clone-tool",
+        "version": "1.0.0"
+    }), 200
+
+
 @api_bp.route('/mysql/download', methods=['POST'])
 def download_mysql_api():
     """Download and install MySQL"""
@@ -534,42 +544,39 @@ def download_mysql_api():
         if destination:
             dest_dir = Path(destination)
         else:
-            # Default: tmp/mysql in project directory
-            dest_dir = BASE_DIR / 'tmp' / 'mysql'
+            # Default: platform-specific user directory
+            from src.db_clone_tool.config import get_default_mysql_dir
+            dest_dir = get_default_mysql_dir()
 
-        # Ensure destination directory exists
-        try:
-            dest_dir.mkdir(parents=True, exist_ok=True)
-        except PermissionError as e:
-            logger.error(f"Permission denied creating directory {dest_dir}: {e}")
+        # Ensure destination directory exists with fallback
+        from src.db_clone_tool.config import create_directory_with_fallback
+        success, created_path, error_msg = create_directory_with_fallback(dest_dir)
+
+        if not success:
+            logger.error(f"Failed to create directory: {error_msg}")
             return jsonify({
                 "success": False,
-                "error": f"Permission denied: Cannot create directory '{dest_dir}'. Please choose a different location (e.g., C:/mysql or C:/Users/YourName/mysql) or run the application as administrator."
+                "error": error_msg
             }), 403
-        except OSError as e:
-            logger.error(f"OS error creating directory {dest_dir}: {e}")
-            return jsonify({
-                "success": False,
-                "error": f"Cannot create directory '{dest_dir}': {str(e)}. Please choose a different location."
-            }), 400
 
-        # Download MySQL
+        # Use the actually created path (may be fallback)
+        if created_path != dest_dir:
+            logger.info(f"Using fallback directory: {created_path}")
+            dest_dir = created_path
+
+        # Create download directory
         logger.info(f"Downloading MySQL {version} to {dest_dir}")
         download_dir = dest_dir / 'downloads'
-        try:
-            download_dir.mkdir(parents=True, exist_ok=True)
-        except PermissionError as e:
-            logger.error(f"Permission denied creating download directory {download_dir}: {e}")
+        success, created_download_dir, error_msg = create_directory_with_fallback(download_dir)
+
+        if not success:
+            logger.error(f"Failed to create download directory: {error_msg}")
             return jsonify({
                 "success": False,
-                "error": f"Permission denied: Cannot create directory '{download_dir}'. Please choose a different location (e.g., C:/mysql or C:/Users/YourName/mysql) or run the application as administrator."
+                "error": error_msg
             }), 403
-        except OSError as e:
-            logger.error(f"OS error creating download directory {download_dir}: {e}")
-            return jsonify({
-                "success": False,
-                "error": f"Cannot create directory '{download_dir}': {str(e)}. Please choose a different location."
-            }), 400
+
+        download_dir = created_download_dir
 
         zip_path = download_mysql(version, str(download_dir))
 

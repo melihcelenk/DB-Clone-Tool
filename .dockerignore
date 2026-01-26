@@ -1,0 +1,64 @@
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.hypothesis/
+
+# Local config and data (will be mounted as volume)
+config.local/
+tmp/
+logs/
+
+# Documentation (not needed in container)
+docs/
+*.md
+!README.md
+
+# Development files
+tests/
+.editorconfig
+.flake8
+mypy.ini
+pytest.ini
+
+# OS specific
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Deployment files (already in container)
+run.bat
+run.sh
+Dockerfile
+docker-compose.yml
+.dockerignore

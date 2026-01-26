@@ -4,6 +4,7 @@ Handles downloading, extracting, and validating MySQL installations
 """
 import os
 import zipfile
+import tarfile
 import requests
 from pathlib import Path
 from typing import List, Optional, Callable
@@ -92,42 +93,52 @@ def download_mysql(
         return None
 
 
-def extract_mysql(zip_path: str, dest_dir: str) -> Optional[str]:
+def extract_mysql(archive_path: str, dest_dir: str) -> Optional[str]:
     """
-    Extract MySQL ZIP archive to destination directory
+    Extract MySQL archive (ZIP or tar.xz) to destination directory
 
     Args:
-        zip_path: Path to ZIP file
+        archive_path: Path to archive file (.zip or .tar.xz)
         dest_dir: Directory to extract to
 
     Returns:
         Path to extracted bin directory, or None if failed
     """
     try:
-        zip_file = Path(zip_path)
+        archive_file = Path(archive_path)
         dest_path = Path(dest_dir)
 
-        if not zip_file.exists():
-            print(f"ZIP file not found: {zip_path}")
+        if not archive_file.exists():
+            print(f"Archive file not found: {archive_path}")
             return None
 
-        # Extract ZIP
-        with zipfile.ZipFile(zip_file, 'r') as zip_ref:
-            zip_ref.extractall(dest_path)
+        # Determine archive format by extension
+        if archive_path.endswith('.tar.xz') or archive_path.endswith('.tar'):
+            # Extract tar.xz or tar
+            with tarfile.open(archive_file, 'r:*') as tar:
+                tar.extractall(dest_path)
+        elif archive_path.endswith('.zip'):
+            # Extract ZIP
+            with zipfile.ZipFile(archive_file, 'r') as zip_ref:
+                zip_ref.extractall(dest_path)
+        else:
+            print(f"Unsupported archive format: {archive_path}")
+            return None
 
         # Find the bin directory
-        # MySQL ZIP structure: mysql-x.y.z-winx64/bin/
-        extracted_dirs = [d for d in dest_path.iterdir() if d.is_dir()]
+        # MySQL archive structure: mysql-x.y.z-{platform}/bin/
+        # Use recursive search to handle nested structures
+        is_windows = os.name == 'nt'
+        mysqldump_name = "mysqldump.exe" if is_windows else "mysqldump"
 
-        for extracted_dir in extracted_dirs:
-            bin_dir = extracted_dir / "bin"
-            if bin_dir.exists() and (bin_dir / "mysqldump.exe").exists():
+        # Search for bin directory with mysqldump
+        for bin_dir in dest_path.rglob("bin"):
+            if bin_dir.is_dir() and (bin_dir / mysqldump_name).exists():
                 return str(bin_dir)
 
-        # If standard structure not found, return first directory with bin
-        for extracted_dir in extracted_dirs:
-            bin_dir = extracted_dir / "bin"
-            if bin_dir.exists():
+        # If not found with mysqldump, return first bin directory
+        for bin_dir in dest_path.rglob("bin"):
+            if bin_dir.is_dir():
                 return str(bin_dir)
 
         return None
