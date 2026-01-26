@@ -233,6 +233,47 @@ Content-Type: application/json
 }
 ```
 
+### MySQL Management
+
+#### GET `/api/mysql/versions`
+
+Get list of available MySQL versions for download.
+
+**Response:**
+```json
+{
+  "versions": ["8.0.40", "8.0.39", "8.0.38", "5.7.44"],
+  "recommended": "8.0.40"
+}
+```
+
+#### POST `/api/mysql/validate`
+
+Validate a MySQL installation path.
+
+**Request Body:**
+```json
+{
+  "path": "C:/mysql/bin"
+}
+```
+
+**Response (Valid):**
+```json
+{
+  "valid": true,
+  "path": "C:/mysql/bin"
+}
+```
+
+**Response (Invalid):**
+```json
+{
+  "valid": false,
+  "error": "MySQL executables not found in specified path"
+}
+```
+
 ## Error Responses
 
 All error responses follow this format:

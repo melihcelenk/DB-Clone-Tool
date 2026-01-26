@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- **BREAKING:** Removed hardcoded default MySQL bin paths
+- MySQL bin path must now be explicitly configured
+- Configuration files moved to `config.local/` directory for better security
+
+### Added
+- MySQL download service with version selection
+- API endpoint for validating MySQL installation paths (`/api/mysql/validate`)
+- API endpoint for fetching available MySQL versions (`/api/mysql/versions`)
+- Improved configuration modal with two options: Manual path or Download MySQL
+- Path validation button to test MySQL installations
+- Comprehensive test coverage for configuration and download services
+
+### Fixed
+- Better error handling when MySQL bin path is not configured
+- Clear messaging when required executables are missing
+
 ## [0.1.0] - 2024-01-XX
 
 ### Added

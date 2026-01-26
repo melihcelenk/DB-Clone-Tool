@@ -187,6 +187,43 @@ input[type="text"], input[type="number"], input[type="password"], input[type="fi
     transition: border-color 0.3s;
 }
 
+/* File input for directory selection should be hidden */
+input.directory-input {
+    display: none;
+}
+
+/* Browse button styling */
+.browse-btn {
+    background: #6c757d;
+    color: white;
+    border: none;
+    padding: 10px 15px;
+    border-radius: 6px;
+    font-size: 18px;
+    cursor: pointer;
+    transition: transform 0.2s, box-shadow 0.2s;
+    white-space: nowrap;
+}
+
+.browse-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 3px 8px rgba(0,0,0,0.2);
+}
+
+.browse-btn:active {
+    transform: translateY(0);
+}
+
+/* Input group for browse buttons */
+.input-group {
+    display: flex;
+    gap: 5px;
+}
+
+.input-group input {
+    flex: 1;
+}
+
 input:focus, select:focus {
     outline: none;
     border-color: #667eea;

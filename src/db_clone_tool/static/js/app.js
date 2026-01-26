@@ -634,7 +634,17 @@ function showAddConnectionModal() {
 
 // Show config modal
 function showConfigModal() {
-    document.getElementById('mysql-bin-input').value = document.getElementById('mysql-bin-path').textContent;
+    // Load current config value into input
+    const pathDisplay = document.getElementById('mysql-bin-path');
+    const currentPath = pathDisplay.value || pathDisplay.textContent || '';
+    
+    // Only set if it's a real path (not placeholder text)
+    if (currentPath && currentPath !== 'Not configured' && currentPath.trim() !== '') {
+        document.getElementById('mysql-bin-input').value = currentPath;
+    } else {
+        document.getElementById('mysql-bin-input').value = '';
+    }
+    
     document.getElementById('config-result').style.display = 'none';
     document.getElementById('config-modal').style.display = 'flex';
 }
@@ -670,8 +680,23 @@ async function loadConfig() {
     try {
         const response = await fetch('/api/config/mysql-bin');
         const result = await response.json();
-        const path = result.path || 'Not configured';
-        document.getElementById('mysql-bin-path').textContent = path;
+        const pathInput = document.getElementById('mysql-bin-path');
+
+        if (result.path && result.path.trim() !== '') {
+            // Path is configured, show the actual path
+            pathInput.value = result.path;
+            pathInput.style.background = 'white';
+            pathInput.style.border = '2px solid #e0e0e0';
+            pathInput.style.fontStyle = 'normal';
+            pathInput.style.color = '#333';
+        } else {
+            // No path configured, show placeholder
+            pathInput.value = '';
+            pathInput.style.background = '#f8f9fa';
+            pathInput.style.border = '1px dashed #ccc';
+            pathInput.style.fontStyle = 'italic';
+            pathInput.style.color = '#999';
+        }
     } catch (error) {
         console.error('Failed to load config:', error);
     }
@@ -802,4 +827,220 @@ function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+}
+
+// MySQL Download Functions
+
+// Load MySQL versions when config modal is shown
+async function loadMySQLVersions() {
+    try {
+        const response = await fetch('/api/mysql/versions');
+        const data = await response.json();
+
+        const select = document.getElementById('mysql-version-select');
+        select.innerHTML = '';
+
+        data.versions.forEach(version => {
+            const option = document.createElement('option');
+            option.value = version;
+            option.textContent = version === data.recommended ? `${version} (Recommended)` : version;
+            if (version === data.recommended) {
+                option.selected = true;
+            }
+            select.appendChild(option);
+        });
+    } catch (error) {
+        console.error('Failed to load MySQL versions:', error);
+        const select = document.getElementById('mysql-version-select');
+        select.innerHTML = '<option value="">Failed to load versions</option>';
+    }
+}
+
+// Override showConfigModal to load versions and config
+const originalShowConfigModal = showConfigModal;
+showConfigModal = async function() {
+    originalShowConfigModal();
+    loadMySQLVersions();
+    await loadConfigToModal();
+};
+
+// Test MySQL path
+async function testMySQLPath() {
+    const pathInput = document.getElementById('mysql-bin-input');
+    const resultDiv = document.getElementById('config-result');
+
+    if (!pathInput || !resultDiv) {
+        console.error('Required elements not found');
+        return;
+    }
+
+    if (!pathInput.value || !pathInput.value.trim()) {
+        resultDiv.className = 'result error';
+        resultDiv.textContent = 'Please enter a path';
+        resultDiv.style.display = 'block';
+        return;
+    }
+
+    resultDiv.className = 'result';
+    resultDiv.textContent = 'Testing...';
+    resultDiv.style.display = 'block';
+
+    try {
+        const response = await fetch('/api/mysql/validate', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({path: pathInput.value.trim()})
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || `Server error: ${response.status}`);
+        }
+
+        const data = await response.json();
+
+        if (data.valid) {
+            resultDiv.className = 'result success';
+            resultDiv.textContent = '✓ Valid MySQL installation found!';
+        } else {
+            resultDiv.className = 'result error';
+            resultDiv.textContent = '✗ MySQL executables not found. Check the path.';
+        }
+        resultDiv.style.display = 'block';
+    } catch (error) {
+        console.error('Test path error:', error);
+        resultDiv.className = 'result error';
+        resultDiv.textContent = 'Error: ' + error.message;
+        resultDiv.style.display = 'block';
+    }
+}
+
+// Show modal helper (if not exists)
+function showModal(modalId) {
+    document.getElementById(modalId).style.display = 'flex';
+}
+
+// Download MySQL
+async function downloadMySQL() {
+    const version = document.getElementById('mysql-version-select').value;
+    const dest = document.getElementById('mysql-dest-input').value.trim();
+
+    if (!version) {
+        alert('Please select a MySQL version');
+        return;
+    }
+
+    // Show download modal
+    document.getElementById('download-version').textContent = `MySQL ${version}`;
+    document.getElementById('download-progress-fill').style.width = '0%';
+    document.getElementById('download-status').textContent = 'Preparing download...';
+    showModal('download-modal');
+
+    try {
+        // Call download API
+        const response = await fetch('/api/mysql/download', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                version: version,
+                destination: dest || ''  // Empty string for default
+            })
+        });
+
+        // Check if response is ok
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || `Server error: ${response.status} ${response.statusText}`);
+        }
+
+        const result = await response.json();
+
+        if (result.success) {
+            // Update progress to 100%
+            document.getElementById('download-progress-fill').style.width = '100%';
+            document.getElementById('download-progress-fill').textContent = '100%';
+            document.getElementById('download-status').textContent = 'Download completed!';
+
+            // Update MySQL bin path in config
+            if (result.bin_path) {
+                // Save to config
+                await fetch('/api/config/mysql-bin', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({path: result.bin_path})
+                });
+
+                // Reload config
+                await loadConfig();
+            }
+
+            // Close download modal after 2 seconds
+            setTimeout(() => {
+                closeModal('download-modal');
+                closeModal('config-modal');
+                alert(`MySQL ${version} downloaded and configured successfully!`);
+            }, 2000);
+        } else {
+            throw new Error(result.error || 'Download failed');
+        }
+    } catch (error) {
+        console.error('Download error:', error);
+        
+        // Try to get error message from response if available
+        let errorMessage = error.message;
+        if (error.response) {
+            try {
+                const errorData = await error.response.json();
+                errorMessage = errorData.error || error.message;
+            } catch (e) {
+                // If response is not JSON, use status text
+                errorMessage = error.response.statusText || error.message;
+            }
+        }
+        
+        document.getElementById('download-status').textContent = 'Error: ' + errorMessage;
+        document.getElementById('download-status').style.color = '#d32f2f';
+        document.getElementById('download-progress-fill').style.width = '0%';
+
+        // Show error and close after 5 seconds (longer for user to read)
+        setTimeout(() => {
+            closeModal('download-modal');
+            alert('Download failed: ' + errorMessage);
+        }, 5000);
+    }
+}
+
+// Cancel download (placeholder)
+function cancelDownload() {
+    closeModal('download-modal');
+}
+
+// Removed browse directory functions - web browsers cannot access full filesystem paths
+// Users must manually enter the path
+
+// Load existing config to modal
+async function loadConfigToModal() {
+    try {
+        // Fetch current config from API to ensure we have the latest value
+        const response = await fetch('/api/config/mysql-bin');
+        const result = await response.json();
+        
+        const pathInput = document.getElementById('mysql-bin-input');
+        
+        if (result.path && result.path.trim() !== '') {
+            // Path is configured, set it in the input
+            pathInput.value = result.path;
+        } else {
+            // No path configured, clear the input
+            pathInput.value = '';
+        }
+    } catch (error) {
+        console.error('Failed to load config to modal:', error);
+        // Fallback: try to get from display element
+        const pathDisplay = document.getElementById('mysql-bin-path');
+        const currentPath = pathDisplay.value || pathDisplay.textContent || '';
+        if (currentPath && currentPath !== 'Not configured' && currentPath.trim() !== '') {
+            document.getElementById('mysql-bin-input').value = currentPath;
+        }
+    }
 }

@@ -37,12 +37,37 @@ def activate_venv():
 
 def install_dependencies(python_exe):
     """Install dependencies if not already installed"""
+    missing = []
+
     try:
         import flask
+    except ImportError:
+        missing.append("Flask")
+
+    try:
         import pymysql
     except ImportError:
-        print("Installing dependencies...")
-        subprocess.run([python_exe, "-m", "pip", "install", "-r", "requirements.txt"], check=True)
+        missing.append("pymysql")
+
+    try:
+        import requests
+    except ImportError:
+        missing.append("requests")
+
+    if missing:
+        print("=" * 70)
+        print("  MISSING DEPENDENCIES")
+        print("=" * 70)
+        print(f"\nRequired packages are not installed: {', '.join(missing)}\n")
+        print("Please run the following command to install dependencies:")
+        print("\n  pip install -e .")
+        print("\nOr for development mode:")
+        print("\n  pip install -e .[dev]")
+        print("\n" + "=" * 70)
+        input("\nPress Enter after installing dependencies...")
+        return False
+
+    return True
 
 def open_browser():
     """Open browser after a short delay"""
