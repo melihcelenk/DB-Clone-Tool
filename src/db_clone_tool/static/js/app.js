@@ -177,7 +177,7 @@ function updateSchemaDropdowns() {
 // Duplicate schema
 function duplicateSchema() {
     if (!currentConnectionId || !currentSchemaName) {
-        alert('Please select a connection and schema');
+        showNotification('warning', 'Please select a connection and schema');
         return;
     }
     
@@ -562,7 +562,7 @@ async function editConnection(connectionId) {
         const conn = await response.json();
         
         if (!conn || conn.error) {
-            alert('Failed to load connection: ' + (conn.error || 'Unknown error'));
+            showNotification('error', 'Failed to load connection: ' + (conn.error || 'Unknown error'));
             return;
         }
         
@@ -587,13 +587,14 @@ async function editConnection(connectionId) {
         document.getElementById('connection-result').style.display = 'none';
         document.getElementById('add-connection-modal').style.display = 'flex';
     } catch (error) {
-        alert('Error: ' + error.message);
+        showNotification('error', 'Error: ' + error.message);
     }
 }
 
 // Delete connection
 async function deleteConnection(connectionId) {
-    if (!confirm('Are you sure you want to delete this connection?')) {
+    const confirmed = await showConfirm('Are you sure you want to delete this connection?', 'Delete Connection', 'Delete', 'Cancel');
+    if (!confirmed) {
         return;
     }
     
@@ -613,10 +614,10 @@ async function deleteConnection(connectionId) {
                 document.getElementById('active-connection-info').style.display = 'none';
             }
         } else {
-            alert('Failed to delete connection: ' + (result.error || 'Unknown error'));
+            showNotification('error', 'Failed to delete connection: ' + (result.error || 'Unknown error'));
         }
     } catch (error) {
-        alert('Error: ' + error.message);
+        showNotification('error', 'Error: ' + error.message);
     }
 }
 
@@ -651,7 +652,7 @@ function showConfigChoiceScreen() {
 function handleShowManualPathForm() {
     showManualPathForm().catch(error => {
         console.error('Error showing manual path form:', error);
-        alert('Error loading manual path form: ' + error.message);
+        showNotification('error', 'Error loading manual path form: ' + error.message);
     });
 }
 
@@ -671,7 +672,7 @@ async function showManualPathForm() {
 function handleShowDownloadForm() {
     showDownloadForm().catch(error => {
         console.error('Error showing download form:', error);
-        alert('Error loading download form: ' + error.message);
+        showNotification('error', 'Error loading download form: ' + error.message);
     });
 }
 
@@ -808,21 +809,22 @@ async function importDump() {
     const targetSchema = (targetSelect && targetSelect.value) || (targetInput ? targetInput.value.trim() : '');
     
     if (!fileInput.files || fileInput.files.length === 0) {
-        alert('Please select a SQL dump file');
+        showNotification('warning', 'Please select a SQL dump file');
         return;
     }
     
     if (!targetSchema) {
-        alert('Please select or enter target schema name');
+        showNotification('warning', 'Please select or enter target schema name');
         return;
     }
     
     if (!currentConnectionId) {
-        alert('Please select a connection first');
+        showNotification('warning', 'Please select a connection first');
         return;
     }
     
-    if (!confirm(`Import dump to schema '${targetSchema}'? This will overwrite existing data if the schema exists.`)) {
+    const confirmed = await showConfirm(`Import dump to schema '${targetSchema}'? This will overwrite existing data if the schema exists.`, 'Import Dump', 'Import', 'Cancel');
+    if (!confirmed) {
         return;
     }
     
@@ -840,7 +842,7 @@ async function importDump() {
         const result = await response.json();
         
         if (result.success) {
-            alert('Dump imported successfully!');
+            showNotification('success', `Dump imported successfully to schema '${targetSchema}'!`);
             // Reload schemas
             if (currentConnectionId) {
                 await loadSchemas(currentConnectionId);
@@ -850,10 +852,10 @@ async function importDump() {
             if (targetSelect) targetSelect.value = '';
             if (targetInput) targetInput.value = '';
         } else {
-            alert('Import failed: ' + (result.error || 'Unknown error'));
+            showNotification('error', 'Import failed: ' + (result.error || 'Unknown error'));
         }
     } catch (error) {
-        alert('Error: ' + error.message);
+        showNotification('error', 'Error: ' + error.message);
     }
 }
 
@@ -867,12 +869,12 @@ async function exportDump() {
     const exportPath = pathInput ? pathInput.value.trim() : '';
     
     if (!sourceSchema) {
-        alert('Please select a schema to export');
+        showNotification('warning', 'Please select a schema to export');
         return;
     }
     
     if (!currentConnectionId) {
-        alert('Please select a connection first');
+        showNotification('warning', 'Please select a connection first');
         return;
     }
     
@@ -911,6 +913,111 @@ function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+}
+
+// Notification System
+function showNotification(type, message, title = null, duration = 5000) {
+    const container = document.getElementById('notification-container');
+    if (!container) return;
+    
+    const notification = document.createElement('div');
+    notification.className = `notification ${type}`;
+    
+    const icons = {
+        success: '✓',
+        error: '✗',
+        warning: '⚠',
+        info: 'ℹ'
+    };
+    
+    const icon = document.createElement('span');
+    icon.className = 'notification-icon';
+    icon.textContent = icons[type] || 'ℹ';
+    
+    const content = document.createElement('div');
+    content.className = 'notification-content';
+    
+    if (title) {
+        const titleEl = document.createElement('div');
+        titleEl.className = 'notification-title';
+        titleEl.textContent = title;
+        content.appendChild(titleEl);
+    }
+    
+    const messageEl = document.createElement('div');
+    messageEl.className = 'notification-message';
+    messageEl.textContent = message;
+    content.appendChild(messageEl);
+    
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'notification-close';
+    closeBtn.innerHTML = '×';
+    closeBtn.onclick = () => removeNotification(notification);
+    
+    notification.appendChild(icon);
+    notification.appendChild(content);
+    notification.appendChild(closeBtn);
+    
+    container.appendChild(notification);
+    
+    // Auto remove after duration
+    if (duration > 0) {
+        setTimeout(() => {
+            removeNotification(notification);
+        }, duration);
+    }
+    
+    return notification;
+}
+
+function removeNotification(notification) {
+    notification.classList.add('hiding');
+    setTimeout(() => {
+        if (notification.parentNode) {
+            notification.parentNode.removeChild(notification);
+        }
+    }, 300);
+}
+
+// Confirmation System (replaces confirm())
+function showConfirm(message, title = 'Confirm', okText = 'OK', cancelText = 'Cancel') {
+    return new Promise((resolve) => {
+        const modal = document.getElementById('confirm-modal');
+        const titleEl = document.getElementById('confirm-title');
+        const messageEl = document.getElementById('confirm-message');
+        const okBtn = document.getElementById('confirm-ok-btn');
+        const cancelBtn = document.getElementById('confirm-cancel-btn');
+        
+        if (!modal) {
+            // Fallback if modal doesn't exist
+            resolve(window.confirm(message));
+            return;
+        }
+        
+        titleEl.textContent = title;
+        messageEl.textContent = message;
+        okBtn.textContent = okText;
+        cancelBtn.textContent = cancelText;
+        
+        modal.style.display = 'block';
+        showModal('confirm-modal');
+        
+        const cleanup = () => {
+            okBtn.onclick = null;
+            cancelBtn.onclick = null;
+            closeModal('confirm-modal');
+        };
+        
+        okBtn.onclick = () => {
+            cleanup();
+            resolve(true);
+        };
+        
+        cancelBtn.onclick = () => {
+            cleanup();
+            resolve(false);
+        };
+    });
 }
 
 // MySQL Download Functions
@@ -1125,7 +1232,7 @@ async function useMySQLVersion(version, binPath) {
 
         if (data.success) {
             // Show success message
-            alert(`MySQL ${version} configured successfully!`);
+            showNotification('success', `MySQL ${version} configured successfully!`);
             // Close modals
             closeModal('config-modal');
             // Reload config display
@@ -1135,13 +1242,14 @@ async function useMySQLVersion(version, binPath) {
         }
     } catch (error) {
         console.error('Use MySQL version error:', error);
-        alert('Error: ' + error.message);
+        showNotification('error', 'Error: ' + error.message);
     }
 }
 
 // Repair a MySQL installation
 async function repairMySQLVersion(version, installPath) {
-    if (!confirm(`Repair MySQL ${version}? This will re-extract the installation if the archive is available.`)) {
+    const confirmed = await showConfirm(`Repair MySQL ${version}? This will re-extract the installation if the archive is available.`, 'Repair MySQL', 'Repair', 'Cancel');
+    if (!confirmed) {
         return;
     }
 
@@ -1158,7 +1266,8 @@ async function repairMySQLVersion(version, installPath) {
         if (!response.ok) {
             const errorData = await response.json();
             if (errorData.requires_download) {
-                if (confirm(`Archive not found. Would you like to download MySQL ${version} again?`)) {
+                const downloadConfirmed = await showConfirm(`Archive not found. Would you like to download MySQL ${version} again?`, 'Download Required', 'Download', 'Cancel');
+                if (downloadConfirmed) {
                     downloadMySQLVersion(version);
                 }
             } else {
@@ -1170,7 +1279,7 @@ async function repairMySQLVersion(version, installPath) {
         const data = await response.json();
 
         if (data.success) {
-            alert(`MySQL ${version} repaired successfully!`);
+            showNotification('success', `MySQL ${version} repaired successfully!`);
             // Reload versions to update status
             await loadMySQLVersionsWithStatus();
         } else {
@@ -1178,7 +1287,7 @@ async function repairMySQLVersion(version, installPath) {
         }
     } catch (error) {
         console.error('Repair MySQL version error:', error);
-        alert('Error: ' + error.message);
+        showNotification('error', 'Error: ' + error.message);
     }
 }
 
@@ -1340,7 +1449,7 @@ function showModal(modalId) {
 async function downloadMySQL() {
     // This function is kept for backward compatibility but should not be used
     // Users should click "Download" button on version items instead
-    alert('Please select a version from the list and click "Download"');
+    showNotification('info', 'Please select a version from the list and click "Download"');
 }
 
 // Cancel download

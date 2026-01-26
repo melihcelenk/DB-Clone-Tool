@@ -287,6 +287,21 @@
         </div>
     </div>
     
+    <!-- Notification Container -->
+    <div id="notification-container" style="position: fixed; bottom: 20px; right: 20px; z-index: 10000; display: flex; flex-direction: column; gap: 10px; max-width: 400px;"></div>
+    
+    <!-- Confirmation Modal -->
+    <div id="confirm-modal" class="modal" style="display: none;">
+        <div class="modal-content" style="max-width: 400px;">
+            <h3 id="confirm-title">Confirm</h3>
+            <p id="confirm-message"></p>
+            <div style="display: flex; gap: 10px; margin-top: 20px; justify-content: flex-end;">
+                <button type="button" class="btn btn-secondary" id="confirm-cancel-btn">Cancel</button>
+                <button type="button" class="btn btn-danger" id="confirm-ok-btn">OK</button>
+            </div>
+        </div>
+    </div>
+    
     <script src="{{ url_for('static', filename='js/app.js') }}"></script>
 </body>
 </html>
