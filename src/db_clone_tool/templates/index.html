@@ -55,6 +55,10 @@
                     <div class="config-label">Database</div>
                     <div class="config-value" id="active-database">-</div>
                 </div>
+                <div class="config-item" style="margin-top: 15px; display: flex; gap: 10px;">
+                    <button class="btn btn-success" id="duplicate-schema-btn" onclick="duplicateSchema()" disabled style="flex: 1; padding: 8px;">Duplicate</button>
+                    <button class="btn btn-primary" id="export-schema-btn" onclick="showExportModal()" disabled style="flex: 1; padding: 8px;">Export</button>
+                </div>
             </div>
             <div class="config-section">
                 <h3 style="font-size: 14px; margin-bottom: 10px; color: #333;">Import Dump</h3>
@@ -69,25 +73,12 @@
                     <button class="btn btn-success" onclick="importDump()" style="margin-top: 10px; padding: 8px;">Import Dump</button>
                 </div>
             </div>
-            <div class="config-section">
-                <h3 style="font-size: 14px; margin-bottom: 10px; color: #333;">Export Dump</h3>
-                <div class="config-item">
-                    <div class="config-label">Source Schema</div>
-                    <select id="export-source-schema-select" style="width: 100%; padding: 8px; margin-top: 5px; border: 2px solid #e0e0e0; border-radius: 6px;">
-                        <option value="">Select schema to export...</option>
-                    </select>
-                    <div class="config-label" style="margin-top: 10px;">Export Path (optional)</div>
-                    <input type="text" id="export-path-input" placeholder="Leave empty for default location" style="width: 100%; padding: 8px; margin-top: 5px; border: 2px solid #e0e0e0; border-radius: 6px;">
-                    <button class="btn btn-success" onclick="exportDump()" style="margin-top: 10px; padding: 8px;">Export Dump</button>
-                    <div id="export-result" style="margin-top: 10px; padding: 10px; border-radius: 6px; display: none;"></div>
-                </div>
-            </div>
         </div>
     </div>
     
     <!-- Context Menu -->
     <div class="context-menu" id="context-menu">
-        <div class="context-menu-item" onclick="duplicateSchema()">Duplicate</div>
+        <div class="context-menu-item" onclick="clearSchemaSelection()">Clear</div>
     </div>
     
     <!-- Add Connection Modal -->
@@ -283,6 +274,32 @@
                 <button type="submit" class="btn" id="clone-btn">Start Clone</button>
                 <button type="button" class="btn btn-danger" id="cancel-clone-btn" onclick="cancelClone()" style="display: none; margin-top: 10px;">Cancel</button>
                 <button type="button" class="btn btn-success" id="return-home-btn" onclick="returnToHome()" style="display: none; margin-top: 10px;">Return to Home</button>
+            </form>
+        </div>
+    </div>
+    
+    <!-- Export Dump Modal -->
+    <div class="modal" id="export-dump-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title">Export Dump</h2>
+                <button class="close-btn" onclick="closeModal('export-dump-modal')">&times;</button>
+            </div>
+            <form id="export-dump-form" onsubmit="exportDumpFromModal(event)">
+                <div class="form-group">
+                    <label>Source Schema</label>
+                    <select id="export-modal-source-schema-select" required style="width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 6px; font-size: 14px;">
+                        <option value="">Select schema to export...</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Export Path (optional)</label>
+                    <input type="text" id="export-modal-path-input" placeholder="Leave empty for default location" style="width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 6px; font-size: 14px;">
+                    <small style="color: #666; font-size: 12px; margin-top: 5px; display: block;">Leave empty to use the default export location</small>
+                </div>
+                <div id="export-modal-result" class="result" style="display: none; margin-top: 10px;"></div>
+                <button type="submit" class="btn btn-success">Export Dump</button>
+                <button type="button" class="btn btn-secondary" onclick="closeModal('export-dump-modal')" style="margin-top: 10px;">Cancel</button>
             </form>
         </div>
     </div>

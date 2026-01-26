@@ -8,6 +8,7 @@ let availableSchemas = []; // Store schemas for dropdowns
 document.addEventListener('DOMContentLoaded', function() {
     loadConnections();
     loadConfig();
+    updateActiveConnectionButtons(); // Initialize button states
 });
 
 // Load connections
@@ -48,6 +49,7 @@ function renderConnections(connections) {
 // Select connection
 async function selectConnection(connectionId) {
     currentConnectionId = connectionId;
+    currentSchemaName = null; // Reset schema selection when connection changes
     
     // Reload connections to update active state
     const connectionsResponse = await fetch('/api/connections');
@@ -62,6 +64,9 @@ async function selectConnection(connectionId) {
         document.getElementById('active-port').textContent = conn.port;
         document.getElementById('active-database').textContent = conn.database || 'All';
     }
+    
+    // Update button states
+    updateActiveConnectionButtons();
     
     // Load schemas
     await loadSchemas(connectionId);
@@ -106,8 +111,11 @@ function renderSchemas(schemas) {
         return;
     }
     
-    list.innerHTML = schemas.map(schema => `
-        <div class="schema-item" 
+    list.innerHTML = schemas.map(schema => {
+        const isSelected = currentSchemaName === schema.name;
+        return `
+        <div class="schema-item ${isSelected ? 'selected' : ''}" 
+             onclick="selectSchema('${escapeHtml(schema.name)}')"
              oncontextmenu="event.preventDefault(); showContextMenu(event, '${escapeHtml(schema.name)}')">
             <div class="schema-name">${escapeHtml(schema.name)}</div>
             <div class="schema-info">
@@ -115,15 +123,39 @@ function renderSchemas(schemas) {
                 <span>💾 ${schema.size_mb.toFixed(2)} MB</span>
             </div>
         </div>
-    `).join('');
+    `;
+    }).join('');
     
     // Update dropdowns if connection is selected
     updateSchemaDropdowns();
 }
 
+// Select schema
+function selectSchema(schemaName) {
+    currentSchemaName = schemaName;
+    
+    // Update active database display
+    const activeDatabaseEl = document.getElementById('active-database');
+    if (activeDatabaseEl) {
+        activeDatabaseEl.textContent = schemaName;
+    }
+    
+    // Update visual indication by re-rendering schemas
+    if (availableSchemas && availableSchemas.length > 0) {
+        renderSchemas(availableSchemas);
+    }
+    
+    // Enable Duplicate and Export buttons
+    updateActiveConnectionButtons();
+}
+
 // Show context menu
 function showContextMenu(event, schemaName) {
-    currentSchemaName = schemaName;
+    // Select schema if not already selected
+    if (currentSchemaName !== schemaName) {
+        selectSchema(schemaName);
+    }
+    
     const menu = document.getElementById('context-menu');
     menu.style.display = 'block';
     menu.style.left = event.pageX + 'px';
@@ -166,15 +198,56 @@ function updateSchemaDropdowns() {
             availableSchemas.map(s => `<option value="${escapeHtml(s.name)}">${escapeHtml(s.name)}</option>`).join('');
     }
     
-    // Update export source schema dropdown
-    const exportSelect = document.getElementById('export-source-schema-select');
-    if (exportSelect) {
-        exportSelect.innerHTML = '<option value="">Select schema to export...</option>' +
+    // Update export modal source schema dropdown
+    const exportModalSelect = document.getElementById('export-modal-source-schema-select');
+    if (exportModalSelect) {
+        exportModalSelect.innerHTML = '<option value="">Select schema to export...</option>' +
             availableSchemas.map(s => `<option value="${escapeHtml(s.name)}">${escapeHtml(s.name)}</option>`).join('');
+        if (currentSchemaName) {
+            exportModalSelect.value = currentSchemaName;
+        }
     }
 }
 
-// Duplicate schema
+// Clear schema selection
+function clearSchemaSelection() {
+    document.getElementById('context-menu').style.display = 'none';
+    
+    currentSchemaName = null;
+    
+    // Reset active database display to connection's default
+    const activeDatabaseEl = document.getElementById('active-database');
+    if (activeDatabaseEl && currentConnectionId) {
+        // Get connection info to show default database
+        fetch('/api/connections')
+            .then(response => response.json())
+            .then(connections => {
+                const conn = connections.find(c => c.id === currentConnectionId);
+                if (conn) {
+                    activeDatabaseEl.textContent = conn.database || 'All';
+                } else {
+                    activeDatabaseEl.textContent = '-';
+                }
+            })
+            .catch(() => {
+                activeDatabaseEl.textContent = '-';
+            });
+    } else {
+        if (activeDatabaseEl) {
+            activeDatabaseEl.textContent = '-';
+        }
+    }
+    
+    // Update visual indication by re-rendering schemas
+    if (availableSchemas && availableSchemas.length > 0) {
+        renderSchemas(availableSchemas);
+    }
+    
+    // Disable Duplicate and Export buttons
+    updateActiveConnectionButtons();
+}
+
+// Duplicate schema (from button or context menu)
 function duplicateSchema() {
     if (!currentConnectionId || !currentSchemaName) {
         showNotification('warning', 'Please select a connection and schema');
@@ -209,6 +282,20 @@ function duplicateSchema() {
     document.getElementById('cancel-clone-btn').style.display = 'none';
     document.getElementById('return-home-btn').style.display = 'none';
     document.getElementById('clone-modal').style.display = 'flex';
+}
+
+// Update active connection buttons state
+function updateActiveConnectionButtons() {
+    const duplicateBtn = document.getElementById('duplicate-schema-btn');
+    const exportBtn = document.getElementById('export-schema-btn');
+    const hasSelection = currentConnectionId && currentSchemaName;
+    
+    if (duplicateBtn) {
+        duplicateBtn.disabled = !hasSelection;
+    }
+    if (exportBtn) {
+        exportBtn.disabled = !hasSelection;
+    }
 }
 
 // Start clone
@@ -609,9 +696,11 @@ async function deleteConnection(connectionId) {
             await loadConnections();
             if (currentConnectionId === connectionId) {
                 currentConnectionId = null;
+                currentSchemaName = null;
                 document.getElementById('schemas-list').innerHTML = 
                     '<div class="empty-state"><div class="empty-state-icon">📋</div><p>Select a connection to view schemas</p></div>';
                 document.getElementById('active-connection-info').style.display = 'none';
+                updateActiveConnectionButtons();
             }
         } else {
             showNotification('error', 'Failed to delete connection: ' + (result.error || 'Unknown error'));
@@ -860,10 +949,47 @@ async function importDump() {
 }
 
 // Export dump file
-async function exportDump() {
-    const sourceSelect = document.getElementById('export-source-schema-select');
-    const pathInput = document.getElementById('export-path-input');
-    const resultDiv = document.getElementById('export-result');
+// Show export modal
+function showExportModal() {
+    if (!currentConnectionId || !currentSchemaName) {
+        showNotification('warning', 'Please select a connection and schema');
+        return;
+    }
+    
+    // Update dropdowns first
+    updateSchemaDropdowns();
+    
+    // Pre-select current schema
+    const exportModalSelect = document.getElementById('export-modal-source-schema-select');
+    if (exportModalSelect && currentSchemaName) {
+        exportModalSelect.value = currentSchemaName;
+    }
+    
+    // Clear previous result
+    const resultDiv = document.getElementById('export-modal-result');
+    if (resultDiv) {
+        resultDiv.style.display = 'none';
+        resultDiv.className = 'result';
+        resultDiv.textContent = '';
+    }
+    
+    // Clear export path input
+    const pathInput = document.getElementById('export-modal-path-input');
+    if (pathInput) {
+        pathInput.value = '';
+    }
+    
+    // Show modal
+    showModal('export-dump-modal');
+}
+
+// Export dump from modal
+async function exportDumpFromModal(event) {
+    event.preventDefault();
+    
+    const sourceSelect = document.getElementById('export-modal-source-schema-select');
+    const pathInput = document.getElementById('export-modal-path-input');
+    const resultDiv = document.getElementById('export-modal-result');
     
     const sourceSchema = sourceSelect ? sourceSelect.value : '';
     const exportPath = pathInput ? pathInput.value.trim() : '';

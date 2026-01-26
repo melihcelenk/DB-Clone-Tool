@@ -179,6 +179,12 @@ h1 {
     box-shadow: 0 2px 8px rgba(102, 126, 234, 0.2);
 }
 
+.schema-item.selected {
+    border-color: #667eea;
+    background: #f0f4ff;
+    box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+}
+
 .schema-name {
     font-weight: 600;
     color: #333;
