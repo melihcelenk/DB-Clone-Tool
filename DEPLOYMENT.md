@@ -17,6 +17,20 @@
 
 ### Quick Start
 
+**Option A - Pull from Docker Hub (fastest):**
+
+```bash
+docker run -d \
+  -p 5000:5000 \
+  -v ./config.local:/app/config.local \
+  -v ./tmp:/app/tmp \
+  --name db-clone-tool \
+  --restart unless-stopped \
+  melihcelenk/db-clone-tool:0.2.0
+```
+
+**Option B - Build from source:**
+
 ```bash
 # Clone repository
 git clone https://github.com/melihcelenk/db-clone-tool.git
@@ -447,7 +461,7 @@ server {
 **Documentation:**
 - README.md - Quick start guide
 - DEPLOYMENT.md - This file
-- docs/tasks/DBC-2/ - Technical implementation details
+- RELEASING.md - Release process guide
 
 **Issues:**
 - GitHub: https://github.com/melihcelenk/db-clone-tool/issues
@@ -457,5 +471,5 @@ server {
 
 ---
 
-**Last Updated:** 2026-01-26
-**Version:** 1.0.0 (DBC-2)
+**Last Updated:** 2026-02-25
+**Version:** 0.2.0

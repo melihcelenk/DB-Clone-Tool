@@ -2,17 +2,26 @@
 
 [![Python Version](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Docker Hub](https://img.shields.io/docker/v/melihcelenk/db-clone-tool?label=Docker%20Hub&logo=docker)](https://hub.docker.com/r/melihcelenk/db-clone-tool)
 [![Code Style](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
 Web-based MySQL database schema cloning tool using `mysqldump`. Clone entire database schemas with all tables, data, triggers, procedures, and events through an intuitive web interface.
 
 ## 🚀 Quick Start
 
-### Docker (Recommended for Production)
+### Docker (Recommended)
 
-**One-command deployment:**
+**Pull from Docker Hub and run:**
 
 ```bash
+docker run -d -p 5000:5000 --name db-clone-tool melihcelenk/db-clone-tool:0.2.0
+```
+
+**Or with docker-compose (from source):**
+
+```bash
+git clone https://github.com/melihcelenk/db-clone-tool.git
+cd db-clone-tool
 docker-compose up -d
 ```
 
@@ -72,7 +81,19 @@ For detailed usage see [QUICKSTART.md](QUICKSTART.md).
 - Docker 20.10+
 - Docker Compose 1.29+
 
-**Quick Start:**
+**Option A - Pull from Docker Hub (fastest):**
+
+```bash
+docker run -d \
+  -p 5000:5000 \
+  -v ./config.local:/app/config.local \
+  -v ./tmp:/app/tmp \
+  --name db-clone-tool \
+  --restart unless-stopped \
+  melihcelenk/db-clone-tool:0.2.0
+```
+
+**Option B - Build from source:**
 
 ```bash
 # Clone repository
