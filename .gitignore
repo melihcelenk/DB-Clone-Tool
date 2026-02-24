@@ -127,9 +127,15 @@ config.local/
 *.sql
 dump_*.sql
 
+# Internal development task docs
+docs/tasks/
+
 # Temporary files and logs
 tmp/
 logs/
+
+# Windows artifacts
+nul
 
 # IDE
 .vscode/
