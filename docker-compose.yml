@@ -5,7 +5,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: db-clone-tool:latest
+    image: db-clone-tool:0.2.0
     container_name: db-clone-tool
 
     ports:
