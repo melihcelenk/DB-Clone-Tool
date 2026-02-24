@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  db-clone-tool:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: db-clone-tool:latest
+    container_name: db-clone-tool
+
+    ports:
+      - "5000:5000"
+
+    volumes:
+      # Persist connection configurations
+      - ./config.local:/app/config.local
+      # Persist temporary files (optional)
+      - ./tmp:/app/tmp
+
+    environment:
+      # MySQL bin path (pre-configured in container)
+      - DB_CLONE_MYSQL_BIN=/app/mysql/bin
+      # Config directory
+      - DB_CLONE_CONFIG_DIR=/app/config.local
+      # Flask environment
+      - FLASK_ENV=production
+      - FLASK_DEBUG=0
+
+    restart: unless-stopped
+
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/api/health').read()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+    networks:
+      - db-clone-network
+
+networks:
+  db-clone-network:
+    driver: bridge

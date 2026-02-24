@@ -55,6 +55,10 @@
                     <div class="config-label">Database</div>
                     <div class="config-value" id="active-database">-</div>
                 </div>
+                <div class="config-item" style="margin-top: 15px; display: flex; gap: 10px;">
+                    <button class="btn btn-success" id="duplicate-schema-btn" onclick="duplicateSchema()" disabled style="flex: 1; padding: 8px;">Duplicate</button>
+                    <button class="btn btn-primary" id="export-schema-btn" onclick="showExportModal()" disabled style="flex: 1; padding: 8px;">Export</button>
+                </div>
             </div>
             <div class="config-section">
                 <h3 style="font-size: 14px; margin-bottom: 10px; color: #333;">Import Dump</h3>
@@ -69,25 +73,12 @@
                     <button class="btn btn-success" onclick="importDump()" style="margin-top: 10px; padding: 8px;">Import Dump</button>
                 </div>
             </div>
-            <div class="config-section">
-                <h3 style="font-size: 14px; margin-bottom: 10px; color: #333;">Export Dump</h3>
-                <div class="config-item">
-                    <div class="config-label">Source Schema</div>
-                    <select id="export-source-schema-select" style="width: 100%; padding: 8px; margin-top: 5px; border: 2px solid #e0e0e0; border-radius: 6px;">
-                        <option value="">Select schema to export...</option>
-                    </select>
-                    <div class="config-label" style="margin-top: 10px;">Export Path (optional)</div>
-                    <input type="text" id="export-path-input" placeholder="Leave empty for default location" style="width: 100%; padding: 8px; margin-top: 5px; border: 2px solid #e0e0e0; border-radius: 6px;">
-                    <button class="btn btn-success" onclick="exportDump()" style="margin-top: 10px; padding: 8px;">Export Dump</button>
-                    <div id="export-result" style="margin-top: 10px; padding: 10px; border-radius: 6px; display: none;"></div>
-                </div>
-            </div>
         </div>
     </div>
     
     <!-- Context Menu -->
     <div class="context-menu" id="context-menu">
-        <div class="context-menu-item" onclick="duplicateSchema()">Duplicate</div>
+        <div class="context-menu-item" onclick="clearSchemaSelection()">Clear</div>
     </div>
     
     <!-- Add Connection Modal -->
@@ -137,9 +128,23 @@
                 <button class="close-btn" onclick="closeModal('config-modal')">&times;</button>
             </div>
 
-            <!-- Manual Path Option -->
-            <div style="margin-bottom: 20px; padding-bottom: 20px; border-bottom: 1px solid #e0e0e0;">
-                <h3 style="font-size: 16px; margin-bottom: 10px; color: #333;">Option 1: Manual Path</h3>
+            <!-- Choice Screen (Initial State) -->
+            <div id="config-choice-screen" style="text-align: center; padding: 20px 0;">
+                <p style="color: #666; font-size: 14px; margin-bottom: 30px;">
+                    How would you like to configure MySQL?
+                </p>
+                <div style="display: flex; gap: 15px; justify-content: center;">
+                    <button type="button" class="btn btn-choice btn-primary" onclick="handleShowDownloadForm()" style="flex: 1; max-width: 250px; padding: 20px; font-size: 16px;">
+                        Download MySQL Automatically
+                    </button>
+                    <button type="button" class="btn btn-choice btn-secondary" onclick="handleShowManualPathForm()" style="flex: 1; max-width: 250px; padding: 20px; font-size: 16px;">
+                        I Will Select My Own MySQL Directory
+                    </button>
+                </div>
+            </div>
+
+            <!-- Manual Path Form (Hidden by default) -->
+            <div id="manual-path-form" style="display: none;">
                 <form id="config-form" onsubmit="saveConfig(event)">
                     <div class="form-group">
                         <label>MySQL Bin Directory</label>
@@ -153,29 +158,57 @@
                         <button type="submit" class="btn" style="flex: 1; margin-bottom: 0;">Save Configuration</button>
                         <button type="button" class="btn btn-secondary" onclick="testMySQLPath()" style="flex: 1; margin-bottom: 0; margin-left: 0;">Test Path</button>
                     </div>
+                    <button type="button" class="btn btn-link" onclick="showConfigChoiceScreen()" style="margin-top: 10px; color: #667eea; text-decoration: underline; background: none; border: none; cursor: pointer; padding: 5px;">← Back to options</button>
                 </form>
             </div>
 
-            <!-- Download Option -->
-            <div>
-                <h3 style="font-size: 16px; margin-bottom: 10px; color: #333;">Option 2: Download MySQL</h3>
-                <p style="color: #666; font-size: 13px; margin-bottom: 10px;">
-                    Don't have MySQL installed? Download it automatically.
+            <!-- Download Form (Hidden by default) -->
+            <div id="download-form" style="display: none;">
+                <h3 style="font-size: 16px; margin-bottom: 10px; color: #333;">Select MySQL Version</h3>
+                <p style="color: #666; font-size: 13px; margin-bottom: 15px;">
+                    Choose an installed version or download a new one.
                 </p>
-                <div class="form-group">
-                    <label>MySQL Version</label>
-                    <select id="mysql-version-select" style="width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 6px; font-size: 14px;">
-                        <option value="">Loading versions...</option>
-                    </select>
+                
+                <!-- Loading State -->
+                <div id="versions-loading" style="text-align: center; padding: 20px; color: #666;">
+                    <p>Loading versions...</p>
                 </div>
-                <div class="form-group">
-                    <label>Destination Directory</label>
-                    <input type="text" id="mysql-dest-input" placeholder="C:/mysql (leave empty for default)" style="width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 6px; font-size: 14px;">
-                    <small style="color: #666; font-size: 12px; margin-top: 5px; display: block;">
-                        Where to extract MySQL. Default: tmp/mysql
-                    </small>
+
+                <!-- Version List Container -->
+                <div id="mysql-versions-list" style="display: none; max-height: 400px; overflow-y: auto; margin-bottom: 15px;">
+                    <!-- Installed Versions Section -->
+                    <div id="installed-versions-section" style="margin-bottom: 20px;">
+                        <h4 style="font-size: 14px; font-weight: 600; color: #333; margin-bottom: 10px; padding-bottom: 5px; border-bottom: 1px solid #e0e0e0;">Installed</h4>
+                        <div id="installed-versions-container"></div>
+                    </div>
+
+                    <!-- Available Versions Section -->
+                    <div id="available-versions-section">
+                        <h4 style="font-size: 14px; font-weight: 600; color: #333; margin-bottom: 10px; padding-bottom: 5px; border-bottom: 1px solid #e0e0e0;">Available for Download</h4>
+                        <div id="available-versions-container"></div>
+                    </div>
                 </div>
-                <button type="button" class="btn btn-success" onclick="downloadMySQL()">Download & Install</button>
+
+                <!-- Advanced Options Toggle -->
+                <div style="margin: 15px 0;">
+                    <label style="display: flex; align-items: center; cursor: pointer; color: #666; font-size: 14px;">
+                        <input type="checkbox" id="advanced-options-toggle" onchange="toggleAdvancedOptions()" style="margin-right: 8px; width: 18px; height: 18px; cursor: pointer;">
+                        <span>Advanced Options</span>
+                    </label>
+                </div>
+
+                <!-- Destination Directory (Hidden by default) -->
+                <div id="destination-directory-group" style="display: none; margin-top: 15px;">
+                    <div class="form-group">
+                        <label>Destination Directory (Optional)</label>
+                        <input type="text" id="mysql-dest-input" placeholder="Loading default path..." style="width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 6px; font-size: 14px;">
+                        <small style="color: #666; font-size: 12px; margin-top: 5px; display: block;">
+                            Leave empty to use the default location
+                        </small>
+                    </div>
+                </div>
+
+                <button type="button" class="btn btn-link" onclick="showConfigChoiceScreen()" style="margin-top: 10px; color: #667eea; text-decoration: underline; background: none; border: none; cursor: pointer; padding: 5px;">← Back to options</button>
             </div>
         </div>
     </div>
@@ -195,8 +228,16 @@
                     </div>
                 </div>
                 <p id="download-status" style="color: #666; font-size: 14px;">Preparing download...</p>
+                
+                <!-- Success Message (Hidden by default) -->
+                <div id="download-success-message" class="result success" style="display: none; margin-top: 15px; text-align: left;">
+                    <strong>✓ Download completed!</strong>
+                    <p id="download-path-info" style="margin-top: 8px; font-size: 13px; color: #155724; word-break: break-all;"></p>
+                </div>
+                
                 <p style="color: #999; font-size: 12px; margin-top: 20px;">This may take a few minutes depending on your connection speed.</p>
                 <button type="button" class="btn btn-danger" id="cancel-download-btn" onclick="cancelDownload()" style="margin-top: 10px;">Cancel</button>
+                <button type="button" class="btn btn-success" id="download-return-btn" onclick="returnFromDownload()" style="display: none; margin-top: 10px;">Return</button>
             </div>
         </div>
     </div>
@@ -234,6 +275,47 @@
                 <button type="button" class="btn btn-danger" id="cancel-clone-btn" onclick="cancelClone()" style="display: none; margin-top: 10px;">Cancel</button>
                 <button type="button" class="btn btn-success" id="return-home-btn" onclick="returnToHome()" style="display: none; margin-top: 10px;">Return to Home</button>
             </form>
+        </div>
+    </div>
+    
+    <!-- Export Dump Modal -->
+    <div class="modal" id="export-dump-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title">Export Dump</h2>
+                <button class="close-btn" onclick="closeModal('export-dump-modal')">&times;</button>
+            </div>
+            <form id="export-dump-form" onsubmit="exportDumpFromModal(event)">
+                <div class="form-group">
+                    <label>Source Schema</label>
+                    <select id="export-modal-source-schema-select" required style="width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 6px; font-size: 14px;">
+                        <option value="">Select schema to export...</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Export Path (optional)</label>
+                    <input type="text" id="export-modal-path-input" placeholder="Leave empty for default location" style="width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 6px; font-size: 14px;">
+                    <small style="color: #666; font-size: 12px; margin-top: 5px; display: block;">Leave empty to use the default export location</small>
+                </div>
+                <div id="export-modal-result" class="result" style="display: none; margin-top: 10px;"></div>
+                <button type="submit" class="btn btn-success">Export Dump</button>
+                <button type="button" class="btn btn-secondary" onclick="closeModal('export-dump-modal')" style="margin-top: 10px;">Cancel</button>
+            </form>
+        </div>
+    </div>
+    
+    <!-- Notification Container -->
+    <div id="notification-container" style="position: fixed; bottom: 20px; right: 20px; z-index: 10000; display: flex; flex-direction: column; gap: 10px; max-width: 400px;"></div>
+    
+    <!-- Confirmation Modal -->
+    <div id="confirm-modal" class="modal" style="display: none;">
+        <div class="modal-content" style="max-width: 400px;">
+            <h3 id="confirm-title">Confirm</h3>
+            <p id="confirm-message"></p>
+            <div style="display: flex; gap: 10px; margin-top: 20px; justify-content: flex-end;">
+                <button type="button" class="btn btn-secondary" id="confirm-cancel-btn">Cancel</button>
+                <button type="button" class="btn btn-danger" id="confirm-ok-btn">OK</button>
+            </div>
         </div>
     </div>
     

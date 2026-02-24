@@ -8,7 +8,7 @@ import uuid
 import os
 import subprocess
 import tempfile
-from src.db_clone_tool import storage, config
+from src.db_clone_tool import storage, config, APP_NAME
 from src.db_clone_tool.db_manager import DatabaseManager
 
 # Base directory
@@ -23,7 +23,8 @@ from src.db_clone_tool.mysql_download import (
     fetch_versions,
     validate_installation,
     download_mysql,
-    extract_mysql
+    extract_mysql,
+    detect_installed_versions
 )
 
 logger = logging.getLogger(__name__)
@@ -472,15 +473,53 @@ def export_dump():
 
 @api_bp.route('/mysql/versions', methods=['GET'])
 def get_mysql_versions():
-    """Get available MySQL versions"""
+    """Get available MySQL versions with installed status"""
     try:
         versions = fetch_versions()
+        installed = detect_installed_versions()
+        
+        # Create a map of installed versions by version string
+        installed_map = {inst['version']: inst for inst in installed}
+        
+        # Build version list with installed status
+        versions_with_status = []
+        for version in versions:
+            version_info = {
+                'version': version,
+                'recommended': version == "8.0.40",
+                'installed': False,
+                'bin_path': None,
+                'is_valid': None,
+                'install_path': None
+            }
+            
+            # Check if this version is installed
+            if version in installed_map:
+                inst_info = installed_map[version]
+                version_info['installed'] = True
+                version_info['bin_path'] = inst_info['bin_path']
+                version_info['is_valid'] = inst_info['is_valid']
+                version_info['install_path'] = inst_info['install_path']
+            
+            versions_with_status.append(version_info)
+        
         return jsonify({
-            "versions": versions,
+            "versions": versions_with_status,
             "recommended": "8.0.40"
         })
     except Exception as e:
         logger.error(f"Error getting MySQL versions: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@api_bp.route('/mysql/installed', methods=['GET'])
+def get_installed_mysql_versions():
+    """Get list of installed MySQL versions"""
+    try:
+        installed = detect_installed_versions()
+        return jsonify({"installed": installed})
+    except Exception as e:
+        logger.error(f"Error getting installed MySQL versions: {e}")
         return jsonify({"error": str(e)}), 500
 
 
@@ -515,6 +554,141 @@ def validate_mysql_path():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+@api_bp.route('/health', methods=['GET'])
+def health_check():
+    """Health check endpoint for Docker and monitoring"""
+    return jsonify({
+        "status": "healthy",
+        "service": APP_NAME,
+        "version": "1.0.0"
+    }), 200
+
+
+@api_bp.route('/mysql/default-directory', methods=['GET'])
+def get_default_mysql_directory():
+    """Get the default MySQL installation directory path"""
+    try:
+        from src.db_clone_tool.config import get_default_mysql_dir
+        default_dir = get_default_mysql_dir()
+        return jsonify({
+            "path": str(default_dir),
+            "platform": "windows" if os.name == 'nt' else "unix"
+        })
+    except Exception as e:
+        logger.error(f"Error getting default directory: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@api_bp.route('/mysql/use', methods=['POST'])
+def use_mysql_version():
+    """Use an existing MySQL installation"""
+    try:
+        data = request.get_json()
+        bin_path = data.get('bin_path')
+        
+        if not bin_path:
+            return jsonify({
+                "success": False,
+                "error": "Missing 'bin_path' field"
+            }), 400
+        
+        # Validate the path
+        is_valid = validate_installation(bin_path)
+        if not is_valid:
+            return jsonify({
+                "success": False,
+                "error": "Invalid MySQL installation. Required executables not found."
+            }), 400
+        
+        # Save to config
+        from src.db_clone_tool.config import set_mysql_bin_path
+        set_mysql_bin_path(bin_path)
+        
+        logger.info(f"MySQL bin path set to: {bin_path}")
+        
+        return jsonify({
+            "success": True,
+            "bin_path": bin_path,
+            "message": "MySQL installation configured successfully"
+        })
+        
+    except Exception as e:
+        logger.error(f"Error using MySQL version: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@api_bp.route('/mysql/repair', methods=['POST'])
+def repair_mysql_version():
+    """Repair a MySQL installation by re-extracting if needed"""
+    try:
+        data = request.get_json()
+        version = data.get('version')
+        install_path = data.get('install_path')
+        
+        if not version:
+            return jsonify({
+                "success": False,
+                "error": "Missing 'version' field"
+            }), 400
+        
+        if not install_path:
+            return jsonify({
+                "success": False,
+                "error": "Missing 'install_path' field"
+            }), 400
+        
+        install_dir = Path(install_path)
+        if not install_dir.exists():
+            return jsonify({
+                "success": False,
+                "error": f"Installation directory does not exist: {install_path}"
+            }), 400
+        
+        # Check if archive exists in downloads folder
+        from src.db_clone_tool.config import get_default_mysql_dir
+        default_dir = get_default_mysql_dir()
+        downloads_dir = default_dir / 'downloads'
+        
+        is_windows = os.name == 'nt'
+        archive_name = f"mysql-{version}.zip" if is_windows else f"mysql-{version}.tar.xz"
+        archive_path = downloads_dir / archive_name
+        
+        if archive_path.exists():
+            # Re-extract from existing archive
+            logger.info(f"Re-extracting MySQL {version} from existing archive")
+            bin_path = extract_mysql(str(archive_path), str(install_dir.parent))
+            
+            if not bin_path:
+                return jsonify({
+                    "success": False,
+                    "error": "Failed to re-extract MySQL archive"
+                }), 500
+            
+            # Validate after extraction
+            if not validate_installation(bin_path):
+                return jsonify({
+                    "success": False,
+                    "error": "Repair failed: Installation is still invalid after re-extraction"
+                }), 500
+            
+            return jsonify({
+                "success": True,
+                "bin_path": bin_path,
+                "message": f"MySQL {version} repaired successfully"
+            })
+        else:
+            # Archive doesn't exist, need to re-download
+            return jsonify({
+                "success": False,
+                "error": f"Archive not found. Please download MySQL {version} again.",
+                "requires_download": True
+            }), 404
+        
+    except Exception as e:
+        logger.error(f"Error repairing MySQL version: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @api_bp.route('/mysql/download', methods=['POST'])
 def download_mysql_api():
     """Download and install MySQL"""
@@ -534,42 +708,39 @@ def download_mysql_api():
         if destination:
             dest_dir = Path(destination)
         else:
-            # Default: tmp/mysql in project directory
-            dest_dir = BASE_DIR / 'tmp' / 'mysql'
+            # Default: platform-specific user directory
+            from src.db_clone_tool.config import get_default_mysql_dir
+            dest_dir = get_default_mysql_dir()
 
-        # Ensure destination directory exists
-        try:
-            dest_dir.mkdir(parents=True, exist_ok=True)
-        except PermissionError as e:
-            logger.error(f"Permission denied creating directory {dest_dir}: {e}")
+        # Ensure destination directory exists with fallback
+        from src.db_clone_tool.config import create_directory_with_fallback
+        success, created_path, error_msg = create_directory_with_fallback(dest_dir)
+
+        if not success:
+            logger.error(f"Failed to create directory: {error_msg}")
             return jsonify({
                 "success": False,
-                "error": f"Permission denied: Cannot create directory '{dest_dir}'. Please choose a different location (e.g., C:/mysql or C:/Users/YourName/mysql) or run the application as administrator."
+                "error": error_msg
             }), 403
-        except OSError as e:
-            logger.error(f"OS error creating directory {dest_dir}: {e}")
-            return jsonify({
-                "success": False,
-                "error": f"Cannot create directory '{dest_dir}': {str(e)}. Please choose a different location."
-            }), 400
 
-        # Download MySQL
+        # Use the actually created path (may be fallback)
+        if created_path != dest_dir:
+            logger.info(f"Using fallback directory: {created_path}")
+            dest_dir = created_path
+
+        # Create download directory
         logger.info(f"Downloading MySQL {version} to {dest_dir}")
         download_dir = dest_dir / 'downloads'
-        try:
-            download_dir.mkdir(parents=True, exist_ok=True)
-        except PermissionError as e:
-            logger.error(f"Permission denied creating download directory {download_dir}: {e}")
+        success, created_download_dir, error_msg = create_directory_with_fallback(download_dir)
+
+        if not success:
+            logger.error(f"Failed to create download directory: {error_msg}")
             return jsonify({
                 "success": False,
-                "error": f"Permission denied: Cannot create directory '{download_dir}'. Please choose a different location (e.g., C:/mysql or C:/Users/YourName/mysql) or run the application as administrator."
+                "error": error_msg
             }), 403
-        except OSError as e:
-            logger.error(f"OS error creating download directory {download_dir}: {e}")
-            return jsonify({
-                "success": False,
-                "error": f"Cannot create directory '{download_dir}': {str(e)}. Please choose a different location."
-            }), 400
+
+        download_dir = created_download_dir
 
         zip_path = download_mysql(version, str(download_dir))
 

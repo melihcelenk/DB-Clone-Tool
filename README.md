@@ -6,13 +6,46 @@
 
 Web-based MySQL database schema cloning tool using `mysqldump`. Clone entire database schemas with all tables, data, triggers, procedures, and events through an intuitive web interface.
 
-## 🚀 Quick Start (Windows)
+## 🚀 Quick Start
+
+### Docker (Recommended for Production)
+
+**One-command deployment:**
+
+```bash
+docker-compose up -d
+```
+
+- MySQL binaries pre-installed in container
+- Configurations persisted via volumes
+- Automatic restart on failure
+- Access at `http://localhost:5000`
+
+**Stop the service:**
+```bash
+docker-compose down
+```
+
+### Windows
 
 **One-click run:**
 
 1. **Double-click** on `run.bat`
 2. Packages will be installed automatically on first run
 3. Browser will open automatically
+
+### Linux / macOS
+
+**One-command run:**
+
+```bash
+./run.sh
+```
+
+**First-time setup:**
+- Script will auto-create virtual environment
+- Dependencies will be auto-installed
+- Application starts at `http://localhost:5000`
 
 For detailed usage see [QUICKSTART.md](QUICKSTART.md).
 
@@ -33,15 +66,47 @@ For detailed usage see [QUICKSTART.md](QUICKSTART.md).
 
 ## Installation
 
-### Prerequisites
+### Docker Deployment (Recommended)
 
+**Requirements:**
+- Docker 20.10+
+- Docker Compose 1.29+
+
+**Quick Start:**
+
+```bash
+# Clone repository
+git clone https://github.com/melihcelenk/db-clone-tool.git
+cd db-clone-tool
+
+# Start with Docker Compose
+docker-compose up -d
+
+# Check status
+docker-compose ps
+
+# View logs
+docker-compose logs -f
+```
+
+**Access:**
+- Web UI: `http://localhost:5000`
+- Health check: `http://localhost:5000/api/health`
+
+**MySQL binaries are pre-installed** in the Docker image at `/app/mysql/bin`.
+
+### Native Installation
+
+**Requirements:**
 - Python 3.8 or higher
-- MySQL server with `mysqldump` and `mysql` binaries
+- MySQL server with `mysqldump` and `mysql` binaries (or use download feature)
 - pip (Python package manager)
 
-### Quick Start (Windows)
+### Quick Start
 
-**Easiest method - Run by double-clicking:**
+#### Windows
+
+**Easiest method - Double-click to run:**
 
 1. Download or clone the project
 2. Double-click on `run.bat`
@@ -49,9 +114,23 @@ For detailed usage see [QUICKSTART.md](QUICKSTART.md).
    - Browser will open automatically
    - Application will run at `http://localhost:5000`
 
-**Alternative - With Python file:**
+#### Linux / macOS
 
-- Double-click on `run.py` (performs the same function, cross-platform)
+**Easiest method - One-command run:**
+
+1. Download or clone the project
+2. Run in terminal:
+   ```bash
+   ./run.sh
+   ```
+   - Virtual environment created automatically
+   - Packages installed automatically on first run
+   - Application will run at `http://localhost:5000`
+
+**Note:** On first run, make sure `run.sh` is executable:
+```bash
+chmod +x run.sh
+```
 
 ### Manual Installation
 
@@ -87,15 +166,28 @@ db-clone-tool
 http://localhost:5000
 ```
 
-### Linux/Mac
+### Linux/macOS
+
+**Easiest method - One-command run:**
 
 ```bash
-python run.py
+./run.sh
 ```
 
-or
+- Virtual environment will be created automatically
+- Dependencies will be installed automatically
+- Application starts at `http://localhost:5000`
+
+**Alternative methods:**
 
 ```bash
+# Using Python directly
+python3 -m src.db_clone_tool.main
+
+# Or with manual venv setup
+python3 -m venv venv
+source venv/bin/activate
+pip install -e .
 python -m src.db_clone_tool.main
 ```
 
@@ -377,7 +469,79 @@ Set MySQL bin path configuration.
 }
 ```
 
+## Docker Usage
+
+### Container Management
+
+**Start service:**
+```bash
+docker-compose up -d
+```
+
+**Stop service:**
+```bash
+docker-compose down
+```
+
+**View logs:**
+```bash
+docker-compose logs -f
+```
+
+**Restart service:**
+```bash
+docker-compose restart
+```
+
+**Rebuild image:**
+```bash
+docker-compose build --no-cache
+docker-compose up -d
+```
+
+### Configuration in Docker
+
+**MySQL Binaries:**
+- Pre-installed at `/app/mysql/bin` in container
+- No additional configuration needed
+
+**Persistent Data:**
+- Connections: `./config.local` (volume mounted)
+- Exports: `./tmp` (volume mounted)
+
+**Environment Variables:**
+```bash
+# Optional customization in docker-compose.yml
+environment:
+  - DB_CLONE_MYSQL_BIN=/app/mysql/bin
+  - FLASK_ENV=production
+```
+
+### Health Check
+
+The container includes a health check that runs every 30 seconds:
+
+```bash
+# Check health status
+docker-compose ps
+
+# Manual health check
+curl http://localhost:5000/api/health
+```
+
 ## Development
+
+### Docker Development Workflow
+
+**Build and run in development mode:**
+
+```bash
+# Build image
+docker-compose build
+
+# Run with live code reload (mount source)
+docker-compose -f docker-compose.dev.yml up
+```
 
 ### Setup Development Environment
 
@@ -547,6 +711,32 @@ Validate a MySQL installation path.
 - Use environment variables for sensitive data in production
 
 ## Troubleshooting
+
+### Docker Issues
+
+**Container won't start:**
+```bash
+# Check logs
+docker-compose logs
+
+# Rebuild image
+docker-compose down
+docker-compose build --no-cache
+docker-compose up -d
+```
+
+**Port 5000 already in use:**
+```bash
+# Change port in docker-compose.yml
+ports:
+  - "8080:5000"  # Use port 8080 instead
+```
+
+**Permissions issues with volumes:**
+```bash
+# Fix ownership (Linux/macOS)
+sudo chown -R $USER:$USER config.local tmp
+```
 
 ### mysqldump not found
 
