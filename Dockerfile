@@ -27,6 +27,11 @@ ENV PYTHONUNBUFFERED=1 \
     DB_CLONE_MYSQL_VERSION=8.0.40 \
     DB_CLONE_CONFIG_DIR=/app/config.local
 
+# Install runtime dependencies for MySQL binaries
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libncurses6 \
+    && rm -rf /var/lib/apt/lists/*
+
 # Create app user (non-root for security)
 RUN useradd -m -u 1000 appuser && \
     mkdir -p /app/mysql/bin /app/config.local && \
