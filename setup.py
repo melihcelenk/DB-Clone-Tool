@@ -29,7 +29,8 @@ setup(
     python_requires=">=3.8",
     install_requires=[
         "Flask==3.0.0",
-        "pymysql==1.1.0",
+        "pymysql==1.1.1",
+        "cryptography>=41.0.0",
         "python-dotenv==1.0.0",
         "requests>=2.31.0",
     ],
