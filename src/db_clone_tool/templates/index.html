@@ -88,6 +88,11 @@
                 <h2 class="modal-title">Add Connection</h2>
                 <button class="close-btn" onclick="closeModal('add-connection-modal')">&times;</button>
             </div>
+            <div id="mysql-config-warning" class="config-warning-banner">
+                <span class="warning-icon">⚠️</span>
+                MySQL Bin Path is not configured. You can add connections, but <strong>clone, export, and import</strong> operations require MySQL tools.
+                <a onclick="closeModal('add-connection-modal'); showConfigModal();">Configure now</a>
+            </div>
             <form id="add-connection-form" onsubmit="addConnection(event)">
                 <div class="form-group">
                     <label>Name</label>

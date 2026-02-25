@@ -391,6 +391,33 @@ input:focus, select:focus {
     border: 1px solid #f5c6cb;
 }
 
+.config-warning-banner {
+    background: #fff3cd;
+    color: #856404;
+    border: 1px solid #ffc107;
+    border-radius: 6px;
+    padding: 12px 15px;
+    margin-bottom: 15px;
+    font-size: 13px;
+    line-height: 1.5;
+    display: none;
+}
+
+.config-warning-banner .warning-icon {
+    margin-right: 6px;
+}
+
+.config-warning-banner a {
+    color: #856404;
+    font-weight: 600;
+    text-decoration: underline;
+    cursor: pointer;
+}
+
+.config-warning-banner a:hover {
+    color: #533f03;
+}
+
 .config-section {
     margin-bottom: 20px;
 }

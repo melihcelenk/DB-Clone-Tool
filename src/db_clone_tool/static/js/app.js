@@ -673,6 +673,9 @@ async function editConnection(connectionId) {
         // Show modal
         document.getElementById('connection-result').style.display = 'none';
         document.getElementById('add-connection-modal').style.display = 'flex';
+
+        // Check MySQL config status
+        await checkMySQLConfigWarning();
     } catch (error) {
         showNotification('error', 'Error: ' + error.message);
     }
@@ -711,7 +714,7 @@ async function deleteConnection(connectionId) {
 }
 
 // Show add connection modal
-function showAddConnectionModal() {
+async function showAddConnectionModal() {
     const form = document.getElementById('add-connection-form');
     form.reset();
     delete form.dataset.connectionId;
@@ -720,6 +723,32 @@ function showAddConnectionModal() {
     submitBtn.textContent = 'Add Connection';
     document.getElementById('connection-result').style.display = 'none';
     document.getElementById('add-connection-modal').style.display = 'flex';
+
+    // Check MySQL config status and show warning if not configured or invalid
+    await checkMySQLConfigWarning();
+}
+
+// Check MySQL config and show/hide warning banner
+async function checkMySQLConfigWarning() {
+    const warning = document.getElementById('mysql-config-warning');
+    try {
+        const resp = await fetch('/api/config/mysql-bin');
+        const data = await resp.json();
+        if (!data.path) {
+            warning.style.display = 'block';
+            return;
+        }
+        // Path exists in config, validate it
+        const validateResp = await fetch('/api/mysql/validate', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({path: data.path})
+        });
+        const validateData = await validateResp.json();
+        warning.style.display = validateData.valid ? 'none' : 'block';
+    } catch (e) {
+        warning.style.display = 'block';
+    }
 }
 
 // Show config modal
