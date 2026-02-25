@@ -4,7 +4,7 @@
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Docker Hub](https://img.shields.io/docker/v/melihcelenk/db-clone-tool?label=Docker%20Hub&logo=docker)](https://hub.docker.com/r/melihcelenk/db-clone-tool)
 
-Web-based MySQL database schema cloning tool using `mysqldump`. Clone entire database schemas with all tables, data, triggers, procedures, and events through an intuitive web interface.
+All-in-one MySQL schema cloning tool. No setup, no CLI — just clone, export, and manage your schemas from the browser.
 
 <img width="2136" height="1343" alt="image" src="https://github.com/user-attachments/assets/e8b883f3-f1bd-436c-b49d-aabc8dee9513" />
 <img width="1417" height="892" alt="image" src="https://github.com/user-attachments/assets/1399d4fe-b919-4087-9b61-1ca8a158115a" />

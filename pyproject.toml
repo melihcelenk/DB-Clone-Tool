@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "db-clone-tool"
 version = "0.2.0"
-description = "Web-based MySQL database schema cloning tool using mysqldump"
+description = "All-in-one MySQL schema cloning tool with a built-in web UI"
 readme = "README.md"
 requires-python = ">=3.8"
 license = {text = "MIT"}

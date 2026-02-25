@@ -11,7 +11,7 @@ long_description = readme_file.read_text(encoding="utf-8") if readme_file.exists
 setup(
     name="db-clone-tool",
     version="0.2.0",
-    description="Web-based MySQL database schema cloning tool using mysqldump",
+    description="All-in-one MySQL schema cloning tool with a built-in web UI",
     long_description=long_description,
     long_description_content_type="text/markdown",
     author="Melih Çelenk",
