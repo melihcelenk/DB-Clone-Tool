@@ -460,8 +460,8 @@ server {
 
 **Documentation:**
 - README.md - Quick start guide
-- DEPLOYMENT.md - This file
-- RELEASING.md - Release process guide
+- docs/DEPLOYMENT.md - This file
+- docs/RELEASING.md - Release process guide
 
 **Issues:**
 - GitHub: https://github.com/melihcelenk/db-clone-tool/issues

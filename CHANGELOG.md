@@ -29,8 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `run.py` for cross-platform Python launcher
 - **Comprehensive documentation**
   - API reference (`docs/API.md`)
-  - Deployment guide (`DEPLOYMENT.md`)
-  - Quick start guide (`QUICKSTART.md`)
+  - Deployment guide (`docs/DEPLOYMENT.md`)
   - Contributing guidelines (`CONTRIBUTING.md`)
   - Security policy (`SECURITY.md`)
 

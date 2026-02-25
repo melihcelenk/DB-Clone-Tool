@@ -50,14 +50,14 @@ Add the release link at the bottom:
 
 ### 3. Update Documentation
 
-- Update version references in `DEPLOYMENT.md` (bottom of file)
+- Update version references in `docs/DEPLOYMENT.md` (bottom of file)
 - Update Docker image tags in `README.md` if changed
 
 ### 4. Commit and Tag
 
 ```bash
 # Stage all version changes
-git add pyproject.toml setup.py docker-compose.yml CHANGELOG.md README.md DEPLOYMENT.md
+git add pyproject.toml setup.py docker-compose.yml CHANGELOG.md README.md docs/DEPLOYMENT.md
 
 # Commit
 git commit -m "release: vX.Y.Z"
@@ -123,7 +123,7 @@ See [CHANGELOG.md](CHANGELOG.md) for full details."
 
 ```bash
 # Full release flow (example for v0.3.0)
-git add pyproject.toml setup.py docker-compose.yml CHANGELOG.md README.md DEPLOYMENT.md
+git add pyproject.toml setup.py docker-compose.yml CHANGELOG.md README.md docs/DEPLOYMENT.md
 git commit -m "release: v0.3.0"
 git tag -a v0.3.0 -m "Release v0.3.0 - new feature description"
 git push origin master && git push origin v0.3.0
