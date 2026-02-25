@@ -221,6 +221,12 @@ h1 {
     background: #f0f4ff;
 }
 
+.context-menu-divider {
+    height: 1px;
+    background: #e0e0e0;
+    margin: 4px 0;
+}
+
 .form-group {
     margin-bottom: 15px;
 }
