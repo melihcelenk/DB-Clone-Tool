@@ -8,7 +8,7 @@ from src.db_clone_tool import APP_NAME
 
 # Base directory for storing config files
 BASE_DIR = Path(__file__).parent.parent.parent
-CONFIG_DIR = BASE_DIR / "config.local"
+CONFIG_DIR = Path(os.environ.get('DB_CLONE_CONFIG_DIR', '')) if os.environ.get('DB_CLONE_CONFIG_DIR') else BASE_DIR / "config.local"
 CONNECTIONS_FILE = CONFIG_DIR / "connections.json"
 CONFIG_FILE = CONFIG_DIR / "config.json"
 
@@ -33,11 +33,19 @@ def get_default_mysql_dir():
         return Path.home() / '.local' / 'share' / APP_NAME / 'mysql'
 
 def get_mysql_bin_path():
-    """Get MySQL bin directory path from config file
+    """Get MySQL bin directory path from environment variable or config file
+
+    Priority:
+        1. DB_CLONE_MYSQL_BIN environment variable (Docker/production)
+        2. config.json file (native installations)
 
     Returns:
         str: MySQL bin path if configured, empty string otherwise
     """
+    env_path = os.environ.get('DB_CLONE_MYSQL_BIN', '')
+    if env_path and Path(env_path).exists():
+        return env_path
+
     if CONFIG_FILE.exists():
         try:
             with open(CONFIG_FILE, 'r', encoding='utf-8') as f:

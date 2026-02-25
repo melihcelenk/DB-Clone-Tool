@@ -24,6 +24,7 @@ FROM python:3.11-slim
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     DB_CLONE_MYSQL_BIN=/app/mysql/bin \
+    DB_CLONE_MYSQL_VERSION=8.0.40 \
     DB_CLONE_CONFIG_DIR=/app/config.local
 
 # Create app user (non-root for security)

@@ -8,6 +8,7 @@ import uuid
 import os
 import subprocess
 import tempfile
+import threading
 from src.db_clone_tool import storage, config, APP_NAME
 from src.db_clone_tool.db_manager import DatabaseManager
 
@@ -30,6 +31,9 @@ from src.db_clone_tool.mysql_download import (
 logger = logging.getLogger(__name__)
 
 api_bp = Blueprint('api', __name__, url_prefix='/api')
+
+# Track download progress for background jobs
+_download_jobs = {}
 
 
 @api_bp.route('/connections', methods=['GET'])
@@ -691,7 +695,7 @@ def repair_mysql_version():
 
 @api_bp.route('/mysql/download', methods=['POST'])
 def download_mysql_api():
-    """Download and install MySQL"""
+    """Start MySQL download as background job, return job_id for progress polling"""
     try:
         data = request.get_json()
 
@@ -708,7 +712,6 @@ def download_mysql_api():
         if destination:
             dest_dir = Path(destination)
         else:
-            # Default: platform-specific user directory
             from src.db_clone_tool.config import get_default_mysql_dir
             dest_dir = get_default_mysql_dir()
 
@@ -718,70 +721,106 @@ def download_mysql_api():
 
         if not success:
             logger.error(f"Failed to create directory: {error_msg}")
-            return jsonify({
-                "success": False,
-                "error": error_msg
-            }), 403
+            return jsonify({"success": False, "error": error_msg}), 403
 
-        # Use the actually created path (may be fallback)
         if created_path != dest_dir:
             logger.info(f"Using fallback directory: {created_path}")
             dest_dir = created_path
 
-        # Create download directory
-        logger.info(f"Downloading MySQL {version} to {dest_dir}")
         download_dir = dest_dir / 'downloads'
         success, created_download_dir, error_msg = create_directory_with_fallback(download_dir)
 
         if not success:
             logger.error(f"Failed to create download directory: {error_msg}")
-            return jsonify({
-                "success": False,
-                "error": error_msg
-            }), 403
+            return jsonify({"success": False, "error": error_msg}), 403
 
         download_dir = created_download_dir
 
-        zip_path = download_mysql(version, str(download_dir))
+        # Create job and start background download
+        job_id = str(uuid.uuid4())
+        _download_jobs[job_id] = {
+            'status': 'running',
+            'phase': 'downloading',
+            'percent': 0,
+            'error': None,
+            'bin_path': None
+        }
 
-        if not zip_path:
-            return jsonify({
-                "success": False,
-                "error": "Failed to download MySQL. Please check your internet connection and try again."
-            }), 500
+        def progress_callback(percent):
+            _download_jobs[job_id]['percent'] = min(percent, 90)  # Reserve 90-100 for extract+validate
 
-        # Extract MySQL
-        logger.info(f"Extracting MySQL to {dest_dir}")
-        bin_path = extract_mysql(zip_path, str(dest_dir))
+        def run_download():
+            try:
+                logger.info(f"[{job_id}] Downloading MySQL {version} to {download_dir}")
+                zip_path = download_mysql(version, str(download_dir), progress_callback=progress_callback)
 
-        if not bin_path:
-            return jsonify({
-                "success": False,
-                "error": "Failed to extract MySQL archive. The downloaded file may be corrupted."
-            }), 500
+                if not zip_path:
+                    _download_jobs[job_id].update({
+                        'status': 'failed',
+                        'error': 'Failed to download MySQL. Please check your internet connection and try again.'
+                    })
+                    return
 
-        # Validate installation
-        if not validate_installation(bin_path):
-            return jsonify({
-                "success": False,
-                "error": "MySQL installation validation failed. Required executables not found."
-            }), 500
+                _download_jobs[job_id].update({'phase': 'extracting', 'percent': 92})
+                logger.info(f"[{job_id}] Extracting MySQL to {dest_dir}")
+                bin_path = extract_mysql(zip_path, str(dest_dir))
 
-        # Clean up downloaded ZIP
-        try:
-            os.remove(zip_path)
-        except Exception:
-            pass  # Ignore cleanup errors
+                if not bin_path:
+                    _download_jobs[job_id].update({
+                        'status': 'failed',
+                        'error': 'Failed to extract MySQL archive. The downloaded file may be corrupted.'
+                    })
+                    return
 
-        logger.info(f"MySQL {version} installed successfully at {bin_path}")
+                _download_jobs[job_id].update({'phase': 'validating', 'percent': 96})
+                if not validate_installation(bin_path):
+                    _download_jobs[job_id].update({
+                        'status': 'failed',
+                        'error': 'MySQL installation validation failed. Required executables not found.'
+                    })
+                    return
 
-        return jsonify({
-            "success": True,
-            "bin_path": bin_path,
-            "version": version,
-            "message": f"MySQL {version} installed successfully"
-        })
+                try:
+                    os.remove(zip_path)
+                except Exception:
+                    pass
+
+                logger.info(f"[{job_id}] MySQL {version} installed successfully at {bin_path}")
+                _download_jobs[job_id].update({
+                    'status': 'completed',
+                    'phase': 'done',
+                    'percent': 100,
+                    'bin_path': bin_path
+                })
+
+            except Exception as e:
+                logger.error(f"[{job_id}] Download error: {e}")
+                _download_jobs[job_id].update({
+                    'status': 'failed',
+                    'error': str(e)
+                })
+
+        thread = threading.Thread(target=run_download, daemon=True)
+        thread.start()
+
+        return jsonify({"job_id": job_id})
 
     except Exception as e:
-        logger.error(f"Error downloading MySQL: {e}")
+        logger.error(f"Error starting MySQL download: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
+
+
+@api_bp.route('/mysql/download/progress/<job_id>', methods=['GET'])
+def download_progress(job_id):
+    """Get download progress for a background job"""
+    job = _download_jobs.get(job_id)
+    if not job:
+        return jsonify({"status": "not_found", "percent": 0, "error": "Job not found"}), 404
+
+    return jsonify({
+        "status": job['status'],
+        "phase": job['phase'],
+        "percent": job['percent'],
+        "error": job.get('error'),
+        "bin_path": job.get('bin_path')
+    })

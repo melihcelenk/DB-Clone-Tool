@@ -1427,14 +1427,19 @@ async function downloadMySQLVersion(version) {
     document.getElementById('download-progress-fill').textContent = '0%';
     document.getElementById('download-status').textContent = 'Preparing download...';
     document.getElementById('download-status').style.color = '#666';
-    document.getElementById('download-result').style.display = 'none';
-    document.getElementById('download-path-info').textContent = '';
+    document.getElementById('download-result-message').style.display = 'none';
+    document.getElementById('download-result-title').textContent = '';
+    document.getElementById('download-result-detail').textContent = '';
     document.getElementById('cancel-download-btn').style.display = 'block';
-    document.getElementById('return-from-download-btn').style.display = 'none';
+    document.getElementById('download-return-btn').style.display = 'none';
     showModal('download-modal');
 
+    let pollInterval = null;
+    let jobId = null;
+
     try {
-        const response = await fetch('/api/mysql/download', {
+        // Start download (returns job_id immediately)
+        const startResponse = await fetch('/api/mysql/download', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
@@ -1443,67 +1448,113 @@ async function downloadMySQLVersion(version) {
             })
         });
 
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error || `Server error: ${response.status} ${response.statusText}`);
+        if (!startResponse.ok) {
+            const errorData = await startResponse.json();
+            throw new Error(errorData.error || `Server error: ${startResponse.status} ${startResponse.statusText}`);
         }
 
-        const result = await response.json();
+        const startResult = await startResponse.json();
+        jobId = startResult.job_id;
 
-        if (result.success) {
-            document.getElementById('download-progress-fill').style.width = '100%';
-            document.getElementById('download-progress-fill').textContent = '100%';
-            document.getElementById('download-status').textContent = 'Download completed!';
-            document.getElementById('download-status').style.color = '#28a745';
-
-            const downloadResultDiv = document.getElementById('download-result');
-            downloadResultDiv.className = 'result success';
-            downloadResultDiv.textContent = '✓ Download completed successfully!';
-            downloadResultDiv.style.display = 'block';
-
-            if (result.bin_path) {
-                document.getElementById('download-path-info').textContent = `Installed at: ${result.bin_path}`;
-                // Save to config
-                await fetch('/api/config/mysql-bin', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({path: result.bin_path})
-                });
-                await loadConfig(); // Reload main config display
+        if (!jobId) {
+            // Legacy sync response (no job_id) - handle directly
+            if (startResult.success) {
+                showDownloadSuccess(startResult.bin_path);
+                return;
+            } else {
+                throw new Error(startResult.error || 'Download failed');
             }
-
-            document.getElementById('cancel-download-btn').style.display = 'none';
-            document.getElementById('return-from-download-btn').style.display = 'block';
-
-            // Reload versions list to show new installation
-            await loadMySQLVersionsWithStatus();
-        } else {
-            throw new Error(result.error || 'Download failed');
         }
-    } catch (error) {
-        console.error('Download error:', error);
-        let errorMessage = error.message;
-        if (error.response) {
+
+        // Poll for progress
+        document.getElementById('download-status').textContent = 'Downloading...';
+        pollInterval = setInterval(async () => {
             try {
-                const errorData = await error.response.json();
-                errorMessage = errorData.error || error.message;
-            } catch (e) {
-                errorMessage = error.response.statusText || error.message;
+                const progressResponse = await fetch(`/api/mysql/download/progress/${jobId}`);
+                const progress = await progressResponse.json();
+
+                const fill = document.getElementById('download-progress-fill');
+                const status = document.getElementById('download-status');
+                fill.style.width = progress.percent + '%';
+                fill.textContent = progress.percent + '%';
+
+                if (progress.phase === 'downloading') {
+                    status.textContent = 'Downloading...';
+                    status.style.color = '#666';
+                } else if (progress.phase === 'extracting') {
+                    status.textContent = 'Extracting...';
+                    status.style.color = '#666';
+                } else if (progress.phase === 'validating') {
+                    status.textContent = 'Validating installation...';
+                    status.style.color = '#666';
+                }
+
+                if (progress.status === 'completed') {
+                    clearInterval(pollInterval);
+                    pollInterval = null;
+                    showDownloadSuccess(progress.bin_path);
+                } else if (progress.status === 'failed') {
+                    clearInterval(pollInterval);
+                    pollInterval = null;
+                    throw new Error(progress.error || 'Download failed');
+                }
+            } catch (pollError) {
+                if (pollInterval) {
+                    clearInterval(pollInterval);
+                    pollInterval = null;
+                }
+                showDownloadError(pollError.message);
             }
+        }, 500);
+
+    } catch (error) {
+        if (pollInterval) {
+            clearInterval(pollInterval);
         }
-
-        document.getElementById('download-status').textContent = 'Error: ' + errorMessage;
-        document.getElementById('download-status').style.color = '#d32f2f';
-        document.getElementById('download-progress-fill').style.width = '0%';
-
-        const downloadResultDiv = document.getElementById('download-result');
-        downloadResultDiv.className = 'result error';
-        downloadResultDiv.textContent = '✗ Download failed: ' + errorMessage;
-        downloadResultDiv.style.display = 'block';
-
-        document.getElementById('cancel-download-btn').style.display = 'none';
-        document.getElementById('return-from-download-btn').style.display = 'block';
+        console.error('Download error:', error);
+        showDownloadError(error.message);
     }
+}
+
+function showDownloadSuccess(binPath) {
+    document.getElementById('download-progress-fill').style.width = '100%';
+    document.getElementById('download-progress-fill').textContent = '100%';
+    document.getElementById('download-status').textContent = 'Download completed!';
+    document.getElementById('download-status').style.color = '#28a745';
+
+    const resultDiv = document.getElementById('download-result-message');
+    resultDiv.className = 'result success';
+    resultDiv.style.display = 'block';
+    document.getElementById('download-result-title').textContent = '✓ Download completed!';
+    document.getElementById('download-result-detail').textContent = binPath ? `Installed at: ${binPath}` : '';
+
+    if (binPath) {
+        fetch('/api/config/mysql-bin', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({path: binPath})
+        }).then(() => loadConfig());
+    }
+
+    document.getElementById('cancel-download-btn').style.display = 'none';
+    document.getElementById('download-return-btn').style.display = 'block';
+    loadMySQLVersionsWithStatus();
+}
+
+function showDownloadError(errorMessage) {
+    document.getElementById('download-status').textContent = 'Error: ' + errorMessage;
+    document.getElementById('download-status').style.color = '#d32f2f';
+    document.getElementById('download-progress-fill').style.width = '0%';
+    document.getElementById('download-progress-fill').textContent = '0%';
+
+    const resultDiv = document.getElementById('download-result-message');
+    resultDiv.className = 'result error';
+    resultDiv.style.display = 'block';
+    document.getElementById('download-result-title').textContent = '✗ Download failed';
+    document.getElementById('download-result-detail').textContent = errorMessage;
+
+    document.getElementById('cancel-download-btn').style.display = 'none';
+    document.getElementById('download-return-btn').style.display = 'block';
 }
 
 // Legacy function for backward compatibility (now calls new function)
@@ -1597,8 +1648,8 @@ function returnFromDownload() {
 function resetDownloadModal() {
     const progressFill = document.getElementById('download-progress-fill');
     const status = document.getElementById('download-status');
-    const successMsg = document.getElementById('download-success-message');
-    const pathInfo = document.getElementById('download-path-info');
+    const successMsg = document.getElementById('download-result-message');
+    const pathInfo = document.getElementById('download-result-detail');
     const cancelBtn = document.getElementById('cancel-download-btn');
     const returnBtn = document.getElementById('download-return-btn');
     

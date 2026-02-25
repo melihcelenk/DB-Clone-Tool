@@ -6,7 +6,7 @@ import base64
 import uuid
 from pathlib import Path
 from typing import List, Dict, Optional
-from src.db_clone_tool.config import CONNECTIONS_FILE
+from src.db_clone_tool import config as _config
 
 
 def _encode_password(password: str) -> str:
@@ -24,11 +24,11 @@ def _decode_password(encoded: str) -> str:
 
 def load_connections() -> List[Dict]:
     """Load all saved connections from file"""
-    if not CONNECTIONS_FILE.exists():
+    if not _config.CONNECTIONS_FILE.exists():
         return []
     
     try:
-        with open(CONNECTIONS_FILE, 'r', encoding='utf-8') as f:
+        with open(_config.CONNECTIONS_FILE, 'r', encoding='utf-8') as f:
             connections = json.load(f)
             # Decode passwords
             for conn in connections:
@@ -49,7 +49,7 @@ def save_connections(connections: List[Dict]):
             conn_copy['password'] = _encode_password(conn_copy['password'])
         connections_to_save.append(conn_copy)
     
-    with open(CONNECTIONS_FILE, 'w', encoding='utf-8') as f:
+    with open(_config.CONNECTIONS_FILE, 'w', encoding='utf-8') as f:
         json.dump(connections_to_save, f, indent=2)
 
 

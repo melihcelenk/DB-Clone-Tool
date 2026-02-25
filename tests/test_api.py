@@ -176,37 +176,39 @@ class TestMySQLDownloadAPI:
         assert 'version' in data['error'].lower()
 
     def test_download_mysql_with_mock(self, client, temp_config_dir, monkeypatch):
-        """Test MySQL download endpoint with mocked functions"""
-        from pathlib import Path
+        """Test MySQL download endpoint returns job_id for async download"""
         import tempfile
+        import time
 
         # Mock download_mysql to return a fake zip path
         def mock_download_mysql(version, dest_dir, progress_callback=None):
-            # Create a fake zip file
+            from pathlib import Path
             zip_path = Path(dest_dir) / f"mysql-{version}.zip"
             zip_path.parent.mkdir(parents=True, exist_ok=True)
             zip_path.touch()
+            if progress_callback:
+                progress_callback(50)
             return str(zip_path)
 
         # Mock extract_mysql to return a fake bin path
         def mock_extract_mysql(zip_path, dest_dir):
+            from pathlib import Path
             bin_path = Path(dest_dir) / "mysql-8.0.40-winx64" / "bin"
             bin_path.mkdir(parents=True, exist_ok=True)
             (bin_path / "mysqldump.exe").touch()
             (bin_path / "mysql.exe").touch()
             return str(bin_path)
 
-        # Mock validate_installation to return True
         def mock_validate_installation(bin_path):
             return True
 
-        # Apply mocks
         import src.db_clone_tool.routes.api as api_module
         monkeypatch.setattr(api_module, 'download_mysql', mock_download_mysql)
         monkeypatch.setattr(api_module, 'extract_mysql', mock_extract_mysql)
         monkeypatch.setattr(api_module, 'validate_installation', mock_validate_installation)
 
         with tempfile.TemporaryDirectory() as temp_dir:
+            # Start download - should return job_id
             response = client.post(
                 '/api/mysql/download',
                 data=json.dumps({
@@ -218,9 +220,19 @@ class TestMySQLDownloadAPI:
 
             assert response.status_code == 200
             data = json.loads(response.data)
-            assert data['success'] is True
-            assert 'bin_path' in data
-            assert data['version'] == '8.0.40'
+            assert 'job_id' in data
+
+            # Poll for completion
+            job_id = data['job_id']
+            for _ in range(20):
+                time.sleep(0.1)
+                progress_resp = client.get(f'/api/mysql/download/progress/{job_id}')
+                progress = json.loads(progress_resp.data)
+                if progress['status'] in ('completed', 'failed'):
+                    break
+
+            assert progress['status'] == 'completed'
+            assert progress['bin_path'] is not None
 
 
 class TestWebRoutes:

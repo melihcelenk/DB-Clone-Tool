@@ -54,19 +54,23 @@ def download_mysql(
         # Determine platform and build URL
         is_windows = os.name == 'nt'
 
+        major_minor = f"{version.split('.')[0]}.{version.split('.')[1]}"
+
         if is_windows:
-            # Windows x64 ZIP archive
-            url = f"https://dev.mysql.com/get/Downloads/MySQL-{version.split('.')[0]}.{version.split('.')[1]}/mysql-{version}-winx64.zip"
+            url = f"https://dev.mysql.com/get/Downloads/MySQL-{major_minor}/mysql-{version}-winx64.zip"
+            filename = f"mysql-{version}.zip"
         else:
-            # Linux generic (not recommended, should use package manager)
-            url = f"https://dev.mysql.com/get/Downloads/MySQL-{version.split('.')[0]}.{version.split('.')[1]}/mysql-{version}-linux-glibc2.28-x86_64.tar.xz"
+            # MySQL 5.7 uses glibc2.12 + tar.gz, 8.0+ uses glibc2.28 + tar.xz
+            if major_minor == '5.7':
+                url = f"https://dev.mysql.com/get/Downloads/MySQL-{major_minor}/mysql-{version}-linux-glibc2.12-x86_64.tar.gz"
+                filename = f"mysql-{version}.tar.gz"
+            else:
+                url = f"https://dev.mysql.com/get/Downloads/MySQL-{major_minor}/mysql-{version}-linux-glibc2.28-x86_64.tar.xz"
+                filename = f"mysql-{version}.tar.xz"
 
         # Ensure destination directory exists
         dest_path = Path(dest_dir)
         dest_path.mkdir(parents=True, exist_ok=True)
-
-        # Determine filename
-        filename = f"mysql-{version}.zip" if is_windows else f"mysql-{version}.tar.xz"
         zip_path = dest_path / filename
 
         # Download with progress tracking
@@ -114,7 +118,7 @@ def extract_mysql(archive_path: str, dest_dir: str) -> Optional[str]:
             return None
 
         # Determine archive format by extension
-        if archive_path.endswith('.tar.xz') or archive_path.endswith('.tar'):
+        if archive_path.endswith('.tar.xz') or archive_path.endswith('.tar.gz') or archive_path.endswith('.tar'):
             # Extract tar.xz or tar
             with tarfile.open(archive_file, 'r:*') as tar:
                 tar.extractall(dest_path)
@@ -219,17 +223,32 @@ def extract_version_from_path(path: Path) -> Optional[str]:
 
 def detect_installed_versions() -> List[Dict[str, Any]]:
     """
-    Detect installed MySQL versions in default directories
-    
+    Detect installed MySQL versions in default directories and environment variable path
+
     Returns:
         List of dicts with keys: version, bin_path, is_valid, install_path
     """
     installed = []
-    
+
+    # Check environment variable first (Docker/production)
+    env_bin_path = os.environ.get('DB_CLONE_MYSQL_BIN', '')
+    if env_bin_path and Path(env_bin_path).exists() and validate_installation(env_bin_path):
+        version = extract_version_from_path(Path(env_bin_path).parent)
+        if not version:
+            # Check DB_CLONE_MYSQL_VERSION env var (set in Dockerfile)
+            version = os.environ.get('DB_CLONE_MYSQL_VERSION', '')
+        version = version or 'pre-installed'
+        installed.append({
+            'version': version,
+            'bin_path': env_bin_path,
+            'is_valid': True,
+            'install_path': str(Path(env_bin_path).parent)
+        })
+
     try:
         from src.db_clone_tool.config import get_default_mysql_dir
         default_dir = get_default_mysql_dir()
-        
+
         if not default_dir.exists():
             return installed
         
@@ -276,8 +295,22 @@ def detect_installed_versions() -> List[Dict[str, Any]]:
                         'install_path': str(install_path)
                     })
         
-        # Sort by version (newest first)
-        installed.sort(key=lambda x: tuple(map(int, x['version'].split('.'))), reverse=True)
+        # Deduplicate by bin_path
+        seen_paths = set()
+        unique_installed = []
+        for inst in installed:
+            if inst['bin_path'] not in seen_paths:
+                seen_paths.add(inst['bin_path'])
+                unique_installed.append(inst)
+        installed = unique_installed
+
+        # Sort by version (newest first), handle non-numeric versions
+        def version_sort_key(x):
+            try:
+                return tuple(map(int, x['version'].split('.')))
+            except (ValueError, AttributeError):
+                return (0, 0, 0)
+        installed.sort(key=version_sort_key, reverse=True)
         
     except Exception as e:
         # Log error but don't fail
