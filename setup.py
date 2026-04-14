@@ -11,7 +11,7 @@ long_description = readme_file.read_text(encoding="utf-8") if readme_file.exists
 setup(
     name="db-clone-tool",
     version="0.2.0",
-    description="All-in-one MySQL schema cloning tool with a built-in web UI",
+    description="All-in-one MySQL & PostgreSQL schema cloning tool with a built-in web UI",
     long_description=long_description,
     long_description_content_type="text/markdown",
     author="Melih Çelenk",
@@ -30,6 +30,7 @@ setup(
     install_requires=[
         "Flask==3.0.0",
         "pymysql==1.1.1",
+        "psycopg[binary]>=3.1.18",
         "cryptography>=41.0.0",
         "python-dotenv==1.0.0",
         "requests>=2.31.0",

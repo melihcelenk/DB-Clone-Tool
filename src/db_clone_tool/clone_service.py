@@ -1,5 +1,9 @@
 """
-Schema cloning service using mysqldump
+Schema cloning service.
+
+Supports MySQL (mysqldump + mysql) and PostgreSQL (pg_dump + pg_restore).
+The engine is selected per-job based on the connection's db_type via the
+factory.
 """
 import os
 import subprocess
@@ -9,9 +13,20 @@ import tempfile
 from pathlib import Path
 from typing import Dict, Optional
 from datetime import datetime
-from src.db_clone_tool.config import get_mysqldump_path, get_mysql_path
+from src.db_clone_tool.config import (
+    get_mysqldump_path,
+    get_mysql_path,
+    get_pg_dump_path,
+    get_pg_restore_path,
+)
 from src.db_clone_tool.storage import get_connection
 from src.db_clone_tool.db_manager import DatabaseManager
+from src.db_clone_tool.postgres_manager import PostgresManager
+from src.db_clone_tool.db_manager_factory import (
+    get_db_type,
+    DB_TYPE_MYSQL,
+    DB_TYPE_POSTGRES,
+)
 
 
 # Global job storage (in-memory)
@@ -79,23 +94,47 @@ class CloneJob:
                     _jobs[self.job_id]['error_message'] = error
     
     def run(self):
-        """Execute the cloning process"""
+        """Execute the cloning process — dispatches to engine-specific path."""
         self._update_status('running', progress=0)
         self.start_time = datetime.now()
-        
+
         with _jobs_lock:
             if self.job_id in _jobs:
                 _jobs[self.job_id]['start_time'] = self.start_time
-        
+
         try:
-            # Get connection info
             connection_info = get_connection(self.connection_id)
             if not connection_info:
                 raise Exception(f"Connection {self.connection_id} not found")
-            
+
+            db_type = get_db_type(connection_info)
+            default_port = 5432 if db_type == DB_TYPE_POSTGRES else 3306
             self._add_log(f"Starting clone: {self.source_schema} -> {self.target_schema}")
-            self._add_log(f"Host: {connection_info['host']}:{connection_info.get('port', 3306)}")
-            
+            self._add_log(f"Engine: {db_type.upper()}")
+            self._add_log(f"Host: {connection_info['host']}:{connection_info.get('port', default_port)}")
+
+            if db_type == DB_TYPE_POSTGRES:
+                self._run_postgres(connection_info)
+            else:
+                self._run_mysql(connection_info)
+
+            self._add_log(f"Clone completed successfully: {self.source_schema} -> {self.target_schema}")
+            self._update_status('completed', progress=100)
+            self.end_time = datetime.now()
+            with _jobs_lock:
+                if self.job_id in _jobs:
+                    _jobs[self.job_id]['end_time'] = self.end_time
+        except Exception as e:
+            self._add_log(f"Error: {str(e)}", level='error')
+            self._update_status('failed', progress=self.progress, error=str(e))
+            self.end_time = datetime.now()
+            with _jobs_lock:
+                if self.job_id in _jobs:
+                    _jobs[self.job_id]['end_time'] = self.end_time
+
+    def _run_mysql(self, connection_info: dict):
+        """MySQL clone: mysqldump (plain SQL) | modify USE | mysql import."""
+        try:
             # Get mysqldump and mysql paths
             mysqldump_path = get_mysqldump_path()
             mysql_path = get_mysql_path()
@@ -255,24 +294,136 @@ class CloneJob:
             if os.path.exists(dump_file):
                 os.remove(dump_file)
                 self._add_log("Temporary dump file removed")
-            
-            self._add_log(f"Clone completed successfully: {self.source_schema} -> {self.target_schema}")
-            self._update_status('completed', progress=100)
-            self.end_time = datetime.now()
-            
-            with _jobs_lock:
-                if self.job_id in _jobs:
-                    _jobs[self.job_id]['end_time'] = self.end_time
-            
-        except Exception as e:
-            self._add_log(f"Error: {str(e)}", level='error')
-            self._update_status('failed', progress=self.progress, error=str(e))
-            self.end_time = datetime.now()
-            
-            with _jobs_lock:
-                if self.job_id in _jobs:
-                    _jobs[self.job_id]['end_time'] = self.end_time
-    
+
+        except Exception:
+            # Let the outer run() handle status update; just bubble up
+            raise
+
+    def _run_postgres(self, connection_info: dict):
+        """PostgreSQL clone: pg_dump -Fc (custom format) -> pg_restore into fresh target DB.
+
+        Custom format is compressed and lets pg_restore parallelise and handle
+        complex objects (functions, triggers, extensions) without the parser
+        fragility of plain-SQL dumps (the exact bug that bit us in Adminer).
+        """
+        pg_dump = get_pg_dump_path()
+        pg_restore = get_pg_restore_path()
+
+        if not pg_dump or not os.path.exists(pg_dump):
+            raise Exception(
+                f"pg_dump not found at: {pg_dump}. "
+                f"Configure PostgreSQL bin path in Settings."
+            )
+        if not pg_restore or not os.path.exists(pg_restore):
+            raise Exception(
+                f"pg_restore not found at: {pg_restore}. "
+                f"Configure PostgreSQL bin path in Settings."
+            )
+
+        self._add_log(f"Using pg_dump: {pg_dump}")
+        self._add_log(f"Using pg_restore: {pg_restore}")
+
+        temp_dir = tempfile.gettempdir()
+        dump_file = os.path.join(temp_dir, f"clone_{self.job_id}.backup")
+
+        # Env with PGPASSWORD — avoids password on command line, works on Windows
+        env = os.environ.copy()
+        env['PGPASSWORD'] = connection_info['password']
+
+        host = connection_info['host']
+        port = str(connection_info.get('port', 5432))
+        user = connection_info['user']
+
+        try:
+            # --- Step 1/3: pg_dump custom format ---
+            self._add_log("Step 1/3: Creating database dump (pg_dump -Fc)...")
+            self._update_status('running', progress=20)
+
+            dump_cmd = [
+                pg_dump,
+                '-h', host,
+                '-p', port,
+                '-U', user,
+                '-Fc',                # custom format (compressed)
+                '--no-owner',         # portable across servers
+                '--no-privileges',
+                '-f', dump_file,
+                '-d', self.source_schema,
+            ]
+
+            self.process = subprocess.Popen(
+                dump_cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                env=env,
+                cwd=os.path.dirname(pg_dump),
+            )
+            _, stderr = self.process.communicate()
+            if self.process.returncode != 0:
+                if os.path.exists(dump_file):
+                    os.remove(dump_file)
+                raise Exception(f"pg_dump failed: {stderr}")
+
+            self._add_log(f"Dump created successfully: {os.path.getsize(dump_file)} bytes")
+
+            # --- Step 2/3: (re)create target database ---
+            self._add_log("Step 2/3: Preparing target database...")
+            self._update_status('running', progress=50)
+
+            pg_mgr = PostgresManager(self.connection_id)
+            if pg_mgr.schema_exists(self.target_schema):
+                self._add_log(f"Target '{self.target_schema}' exists — dropping (kicking active connections first)...")
+                pg_mgr.drop_schema(self.target_schema)
+            self._add_log(f"Creating target database '{self.target_schema}'...")
+            pg_mgr.create_schema(self.target_schema)
+
+            # --- Step 3/3: pg_restore into target ---
+            self._add_log("Step 3/3: Restoring dump to target database...")
+            self._update_status('running', progress=75)
+
+            restore_cmd = [
+                pg_restore,
+                '-h', host,
+                '-p', port,
+                '-U', user,
+                '-d', self.target_schema,
+                '--no-owner',
+                '--no-privileges',
+                '-v',
+                dump_file,
+            ]
+
+            self.process = subprocess.Popen(
+                restore_cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                env=env,
+                cwd=os.path.dirname(pg_restore),
+            )
+            _, stderr = self.process.communicate()
+            # pg_restore returns non-zero on warnings sometimes — treat only
+            # "real" failures as errors (best-effort: look for ERROR lines).
+            if self.process.returncode != 0:
+                if 'ERROR:' in (stderr or ''):
+                    raise Exception(f"pg_restore failed: {stderr}")
+                else:
+                    self._add_log(
+                        f"pg_restore finished with warnings (non-zero exit, no ERROR lines): {stderr}",
+                        level='warning',
+                    )
+
+            self._add_log("Restore completed successfully")
+
+            if os.path.exists(dump_file):
+                os.remove(dump_file)
+                self._add_log("Temporary dump file removed")
+        except Exception:
+            if os.path.exists(dump_file):
+                os.remove(dump_file)
+            raise
+
     def cancel(self):
         """Cancel the running job"""
         if self.status == 'running' and self.process:

@@ -32,6 +32,20 @@ def get_default_mysql_dir():
         # Use XDG-like path: ~/.local/share
         return Path.home() / '.local' / 'share' / APP_NAME / 'mysql'
 
+def get_default_postgres_dir():
+    """Get platform-specific default PostgreSQL installation directory
+
+    Returns:
+        Path: Platform-specific default path for PG binaries
+            - Windows: %LOCALAPPDATA%\\{APP_NAME}\\postgres
+            - Linux/macOS: ~/.local/share/{APP_NAME}/postgres
+    """
+    if os.name == 'nt':
+        local_app_data = os.environ['LOCALAPPDATA']
+        return Path(local_app_data) / APP_NAME / 'postgres'
+    return Path.home() / '.local' / 'share' / APP_NAME / 'postgres'
+
+
 def get_mysql_bin_path():
     """Get MySQL bin directory path from environment variable or config file
 
@@ -104,6 +118,93 @@ def get_mysql_path():
         return os.path.join(bin_path, 'mysql.exe')
     else:  # Linux/Unix
         return os.path.join(bin_path, 'mysql')
+
+
+def get_postgres_bin_path():
+    """Get PostgreSQL bin directory path from env var or config file.
+
+    Priority:
+        1. DB_CLONE_POSTGRES_BIN environment variable
+        2. config.json: postgres_bin_path
+    """
+    env_path = os.environ.get('DB_CLONE_POSTGRES_BIN', '')
+    if env_path and Path(env_path).exists():
+        return env_path
+
+    if CONFIG_FILE.exists():
+        try:
+            with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+                config_data = json.load(f)
+                return config_data.get('postgres_bin_path', '')
+        except Exception:
+            pass
+
+    return ''
+
+
+def set_postgres_bin_path(path):
+    """Save PostgreSQL bin directory path to config file."""
+    config = {}
+    if CONFIG_FILE.exists():
+        try:
+            with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+        except Exception:
+            pass
+
+    config['postgres_bin_path'] = path
+
+    with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+        json.dump(config, f, indent=2)
+
+
+def _pg_exe_name(name):
+    """Windows adds .exe; elsewhere bare name."""
+    return f"{name}.exe" if os.name == 'nt' else name
+
+
+def get_pg_dump_path():
+    bin_path = get_postgres_bin_path()
+    if not bin_path:
+        return None
+    return os.path.join(bin_path, _pg_exe_name('pg_dump'))
+
+
+def get_pg_restore_path():
+    bin_path = get_postgres_bin_path()
+    if not bin_path:
+        return None
+    return os.path.join(bin_path, _pg_exe_name('pg_restore'))
+
+
+def get_psql_path():
+    bin_path = get_postgres_bin_path()
+    if not bin_path:
+        return None
+    return os.path.join(bin_path, _pg_exe_name('psql'))
+
+
+def validate_postgres_bin_path(bin_path):
+    """Validate PostgreSQL bin directory path.
+
+    Returns (is_valid, error_message). Required binaries: pg_dump, pg_restore, psql.
+    """
+    if not bin_path:
+        return False, "PostgreSQL bin path is not configured. Please configure it in settings."
+
+    bin_dir = Path(bin_path)
+    if not bin_dir.exists():
+        return False, "Directory does not exist. Please check the path and try again."
+    if not bin_dir.is_dir():
+        return False, "Path is not a directory. Please provide a directory path."
+
+    required = ['pg_dump', 'pg_restore', 'psql']
+    for name in required:
+        exe = bin_dir / _pg_exe_name(name)
+        if not exe.exists():
+            return False, f"{name} not found in the specified directory. Please ensure PostgreSQL client binaries are present."
+
+    return True, None
 
 
 def validate_mysql_bin_path(bin_path):
