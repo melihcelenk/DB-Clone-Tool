@@ -1136,7 +1136,8 @@ async function loadPostgresVersionsWithStatus() {
         if (!response.ok) throw new Error(`Server error: ${response.status}`);
         const data = await response.json();
 
-        if (data.download_supported === false && unsupportedBanner) {
+        const downloadSupported = data.download_supported !== false;
+        if (!downloadSupported && unsupportedBanner) {
             unsupportedBanner.style.display = 'block';
         }
 
@@ -1150,10 +1151,19 @@ async function loadPostgresVersionsWithStatus() {
             installedContainer.innerHTML = '<p style="color: #999; font-size: 13px; padding: 10px;">No installed versions found.</p>';
         }
 
-        if (available.length) {
-            available.forEach(v => availableContainer.appendChild(renderPostgresVersionItem(v)));
+        // Hide the "Available for Download" section entirely when auto-download
+        // isn't supported (Linux/macOS) — the banner above already explains why.
+        // Otherwise users click Download and get a confusing error.
+        const availableSection = document.getElementById('postgres-available-versions-section');
+        if (!downloadSupported) {
+            if (availableSection) availableSection.style.display = 'none';
         } else {
-            availableContainer.innerHTML = '<p style="color: #999; font-size: 13px; padding: 10px;">No versions available.</p>';
+            if (availableSection) availableSection.style.display = '';
+            if (available.length) {
+                available.forEach(v => availableContainer.appendChild(renderPostgresVersionItem(v)));
+            } else {
+                availableContainer.innerHTML = '<p style="color: #999; font-size: 13px; padding: 10px;">No versions available.</p>';
+            }
         }
 
         loadingDiv.style.display = 'none';
