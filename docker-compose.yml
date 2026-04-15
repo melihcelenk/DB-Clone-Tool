@@ -28,6 +28,11 @@ services:
 
     restart: unless-stopped
 
+    extra_hosts:
+      # Lets the container reach databases running on the host machine
+      # via the hostname "host.docker.internal" (Docker Desktop + Linux).
+      - "host.docker.internal:host-gateway"
+
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/api/health').read()"]
       interval: 30s
