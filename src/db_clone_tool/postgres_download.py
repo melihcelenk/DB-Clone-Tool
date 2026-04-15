@@ -1,20 +1,39 @@
 """
 PostgreSQL client binaries downloader (DBC-3).
 
-Mirrors mysql_download.py for the Postgres side. Uses EnterpriseDB's public
-binary bundle (`postgresql-{version}-{build}-windows-x64-binaries.zip`) on
-Windows. On Linux / macOS, PostgreSQL client tools are distributed via system
-package managers; we don't auto-download there — the UI informs the user.
+Mirrors mysql_download.py for the Postgres side. Two sources depending on OS:
+
+  - Windows: EnterpriseDB's public zip bundle
+    (`postgresql-{version}-{build}-windows-x64-binaries.zip`).
+  - Linux (amd64, Debian-family): PGDG APT archive `.deb` for
+    `postgresql-client-{major}`. Same minor versions catalogued for Windows
+    are available under apt-archive.postgresql.org.
 
 The "bin path" produced by this module is the directory containing pg_dump,
 pg_restore and psql — same shape as MySQL's `bin/`.
 """
+import io
 import os
 import re
+import tarfile
 import zipfile
 import requests
 from pathlib import Path
 from typing import List, Optional, Callable, Dict, Any
+
+
+def _pgdg_linux_url(version: str) -> str:
+    """PGDG APT archive URL for the `postgresql-client-{major}` .deb.
+
+    Pool layout is stable across releases; archive keeps every historic minor.
+    We target Debian bookworm (pgdg120+1) because that matches python:3.11-slim
+    which is the runtime base image we ship.
+    """
+    major = version.split('.')[0]
+    return (
+        f"https://apt-archive.postgresql.org/pub/repos/apt/pool/main/"
+        f"p/postgresql-{major}/postgresql-client-{major}_{version}-1.pgdg120+1_amd64.deb"
+    )
 
 
 # EDB keeps older builds online under stable URLs. Each entry pins the
@@ -24,13 +43,13 @@ from typing import List, Optional, Callable, Dict, Any
 #
 # Source: https://www.enterprisedb.com/download-postgresql-binaries
 POSTGRES_VERSIONS: Dict[str, Dict[str, Optional[str]]] = {
-    "17.2":  {"windows": "https://get.enterprisedb.com/postgresql/postgresql-17.2-1-windows-x64-binaries.zip"},
-    "17.0":  {"windows": "https://get.enterprisedb.com/postgresql/postgresql-17.0-1-windows-x64-binaries.zip"},
-    "16.6":  {"windows": "https://get.enterprisedb.com/postgresql/postgresql-16.6-1-windows-x64-binaries.zip"},
-    "16.4":  {"windows": "https://get.enterprisedb.com/postgresql/postgresql-16.4-1-windows-x64-binaries.zip"},
-    "15.10": {"windows": "https://get.enterprisedb.com/postgresql/postgresql-15.10-1-windows-x64-binaries.zip"},
-    "14.15": {"windows": "https://get.enterprisedb.com/postgresql/postgresql-14.15-1-windows-x64-binaries.zip"},
-    "13.18": {"windows": "https://get.enterprisedb.com/postgresql/postgresql-13.18-1-windows-x64-binaries.zip"},
+    "17.2":  {"windows": "https://get.enterprisedb.com/postgresql/postgresql-17.2-1-windows-x64-binaries.zip",  "linux": _pgdg_linux_url("17.2")},
+    "17.0":  {"windows": "https://get.enterprisedb.com/postgresql/postgresql-17.0-1-windows-x64-binaries.zip",  "linux": _pgdg_linux_url("17.0")},
+    "16.6":  {"windows": "https://get.enterprisedb.com/postgresql/postgresql-16.6-1-windows-x64-binaries.zip",  "linux": _pgdg_linux_url("16.6")},
+    "16.4":  {"windows": "https://get.enterprisedb.com/postgresql/postgresql-16.4-1-windows-x64-binaries.zip",  "linux": _pgdg_linux_url("16.4")},
+    "15.10": {"windows": "https://get.enterprisedb.com/postgresql/postgresql-15.10-1-windows-x64-binaries.zip", "linux": _pgdg_linux_url("15.10")},
+    "14.15": {"windows": "https://get.enterprisedb.com/postgresql/postgresql-14.15-1-windows-x64-binaries.zip", "linux": _pgdg_linux_url("14.15")},
+    "13.18": {"windows": "https://get.enterprisedb.com/postgresql/postgresql-13.18-1-windows-x64-binaries.zip", "linux": _pgdg_linux_url("13.18")},
 }
 
 RECOMMENDED_VERSION = "16.6"  # Stable, widely deployed, matches most hStroke test envs.
@@ -55,15 +74,21 @@ def _get_url_for_version(version: str) -> Optional[str]:
         return None
     if os.name == 'nt':
         return entry.get('windows')
-    # Linux / macOS: EDB binaries are Windows-only in our catalog.
-    # On these platforms the Docker image / package manager provides
-    # pg_dump natively, so no download is wired up here.
+    # Linux: PGDG archive .deb. macOS has no equivalent wired up.
+    import sys
+    if sys.platform.startswith('linux'):
+        return entry.get('linux')
     return None
 
 
 def is_download_supported() -> bool:
-    """True if we can auto-download on the current OS."""
-    return os.name == 'nt'
+    """True if we can auto-download on the current OS.
+
+    Windows uses EDB zip bundles; Linux uses PGDG .deb archive.
+    macOS is left to the user (brew install postgresql).
+    """
+    import sys
+    return os.name == 'nt' or sys.platform.startswith('linux')
 
 
 def download_postgres(
@@ -85,7 +110,10 @@ def download_postgres(
             )
             return None
 
-        filename = f"postgresql-{version}.zip"
+        # Filename follows the URL's extension so extract_postgres() can
+        # dispatch on it (.zip on Windows, .deb on Linux).
+        ext = '.deb' if url.endswith('.deb') else '.zip'
+        filename = f"postgresql-{version}{ext}"
         dest_path = Path(dest_dir)
         dest_path.mkdir(parents=True, exist_ok=True)
         zip_path = dest_path / filename
@@ -112,12 +140,54 @@ def download_postgres(
         return None
 
 
-def extract_postgres(archive_path: str, dest_dir: str) -> Optional[str]:
-    """Extract the EDB Postgres zip and return the path to its bin/ directory.
+def _extract_deb(deb_path: Path, dest_dir: Path) -> None:
+    """Extract a Debian .deb (ar archive) into dest_dir.
 
-    The EDB bundle extracts to a top-level `pgsql/` folder that contains
-    `bin/`, `include/`, `lib/`, `share/`, `doc/` etc. We search recursively
-    for a bin directory that contains pg_dump.
+    `.deb` is an `ar` archive holding three members: debian-binary, control.tar.*
+    and data.tar.*. We only care about data.tar.* — the payload that would
+    land under / on a real install. We skip dpkg entirely (not present in
+    python:3.11-slim) and parse the ar header ourselves — the format is tiny:
+    8-byte magic + 60-byte headers per member, padded to an even boundary.
+    """
+    with open(deb_path, 'rb') as f:
+        magic = f.read(8)
+        if magic != b'!<arch>\n':
+            raise ValueError(f"Not an ar archive: {deb_path}")
+        while True:
+            header = f.read(60)
+            if len(header) < 60:
+                break
+            name = header[:16].decode('ascii', errors='replace').strip()
+            size_field = header[48:58].decode('ascii', errors='replace').strip()
+            size = int(size_field)
+            content = f.read(size)
+            if size % 2:  # ar pads odd-sized members with a trailing newline
+                f.read(1)
+            if name.startswith('data.tar'):
+                if name.endswith('.xz'):
+                    mode = 'r:xz'
+                elif name.endswith('.gz'):
+                    mode = 'r:gz'
+                elif name.endswith('.zst') or name.endswith('.zstd'):
+                    # Py 3.11 tarfile can't read zstd natively; PGDG still ships xz
+                    # but guard the case anyway.
+                    raise ValueError("zstd-compressed .deb not supported")
+                else:
+                    mode = 'r:*'
+                with tarfile.open(fileobj=io.BytesIO(content), mode=mode) as tar:
+                    tar.extractall(dest_dir)
+                return
+    raise ValueError("data.tar.* not found in .deb archive")
+
+
+def extract_postgres(archive_path: str, dest_dir: str) -> Optional[str]:
+    """Extract a Postgres archive and return the path to its bin/ directory.
+
+    Windows: EDB zip — top-level `pgsql/` with `bin/`, `lib/`, etc.
+    Linux:   PGDG .deb — payload mirrors filesystem paths, so pg_dump lands
+             at `{dest_dir}/usr/lib/postgresql/{major}/bin/pg_dump`.
+    We search recursively for a bin directory that contains pg_dump in both
+    cases — same strategy as MySQL's archive extraction.
     """
     try:
         archive_file = Path(archive_path)
@@ -129,6 +199,8 @@ def extract_postgres(archive_path: str, dest_dir: str) -> Optional[str]:
         if archive_path.endswith('.zip'):
             with zipfile.ZipFile(archive_file, 'r') as zf:
                 zf.extractall(dest_path)
+        elif archive_path.endswith('.deb'):
+            _extract_deb(archive_file, dest_path)
         else:
             print(f"Unsupported archive format: {archive_path}")
             return None

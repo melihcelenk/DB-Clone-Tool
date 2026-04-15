@@ -12,6 +12,7 @@ import psycopg
 from psycopg import sql
 from typing import List, Dict, Tuple
 from src.db_clone_tool.storage import get_connection
+from src.db_clone_tool.network import resolve_db_host
 
 
 # PostgreSQL built-in / template databases we hide from the user
@@ -38,7 +39,7 @@ class PostgresManager:
         info = self.connection_info
         target_db = dbname or info.get("database") or "postgres"
         return (
-            f"host={info['host']} "
+            f"host={resolve_db_host(info['host'])} "
             f"port={int(info.get('port', 5432))} "
             f"user={info['user']} "
             f"password={info['password']} "

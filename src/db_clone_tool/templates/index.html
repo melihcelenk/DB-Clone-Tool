@@ -33,7 +33,10 @@
             <h2>Configuration</h2>
             <div class="config-section">
                 <div class="config-item">
-                    <div class="config-label">MySQL Bin Path</div>
+                    <div class="config-label">
+                        MySQL Bin Path
+                        <span id="mysql-version-badge" style="display:none; margin-left:8px; background:#00758f; color:#fff; border-radius:3px; padding:1px 6px; font-size:11px; vertical-align:middle;"></span>
+                    </div>
                     <input type="text" id="mysql-bin-path"
                            placeholder="Not configured - Click Configure to set up"
                            style="background: #f8f9fa; border: 1px dashed #ccc; cursor: pointer;"
@@ -41,7 +44,10 @@
                     <button class="btn btn-secondary" onclick="showConfigModal()" style="margin-top: 10px;">Configure</button>
                 </div>
                 <div class="config-item" style="margin-top: 15px;">
-                    <div class="config-label">PostgreSQL Bin Path</div>
+                    <div class="config-label">
+                        PostgreSQL Bin Path
+                        <span id="postgres-version-badge" style="display:none; margin-left:8px; background:#336791; color:#fff; border-radius:3px; padding:1px 6px; font-size:11px; vertical-align:middle;"></span>
+                    </div>
                     <input type="text" id="postgres-bin-path"
                            placeholder="Not configured - Click Configure to set up"
                            style="background: #f8f9fa; border: 1px dashed #ccc; cursor: pointer;"

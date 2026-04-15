@@ -20,6 +20,7 @@ from src.db_clone_tool.config import (
     get_pg_restore_path,
 )
 from src.db_clone_tool.storage import get_connection
+from src.db_clone_tool.network import resolve_db_host
 from src.db_clone_tool.db_manager import DatabaseManager
 from src.db_clone_tool.postgres_manager import PostgresManager
 from src.db_clone_tool.db_manager_factory import (
@@ -164,7 +165,7 @@ class CloneJob:
             # We'll create the target database separately
             mysqldump_cmd = [
                 mysqldump_path,
-                '-h', connection_info['host'],
+                '-h', resolve_db_host(connection_info['host']),
                 '-P', str(connection_info.get('port', 3306)),
                 '-u', connection_info['user'],
                 f'-p{connection_info["password"]}',
@@ -261,7 +262,7 @@ class CloneJob:
             # Build mysql import command
             mysql_cmd = [
                 mysql_path,
-                '-h', connection_info['host'],
+                '-h', resolve_db_host(connection_info['host']),
                 '-P', str(connection_info.get('port', 3306)),
                 '-u', connection_info['user'],
                 f'-p{connection_info["password"]}'
@@ -330,7 +331,7 @@ class CloneJob:
         env = os.environ.copy()
         env['PGPASSWORD'] = connection_info['password']
 
-        host = connection_info['host']
+        host = resolve_db_host(connection_info['host'])
         port = str(connection_info.get('port', 5432))
         user = connection_info['user']
 

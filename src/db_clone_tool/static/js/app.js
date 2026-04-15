@@ -1448,6 +1448,7 @@ async function testPostgresPath() {
 
 async function loadPostgresConfig() {
     const pathInput = document.getElementById('postgres-bin-path');
+    const badge = document.getElementById('postgres-version-badge');
     if (!pathInput) return;
     try {
         const response = await fetch('/api/config/postgres-bin');
@@ -1458,12 +1459,21 @@ async function loadPostgresConfig() {
             pathInput.style.border = '2px solid #e0e0e0';
             pathInput.style.fontStyle = 'normal';
             pathInput.style.color = '#333';
+            if (badge) {
+                if (result.version) {
+                    badge.textContent = `v${result.version}`;
+                    badge.style.display = 'inline-block';
+                } else {
+                    badge.style.display = 'none';
+                }
+            }
         } else {
             pathInput.value = '';
             pathInput.style.background = '#f8f9fa';
             pathInput.style.border = '1px dashed #ccc';
             pathInput.style.fontStyle = 'italic';
             pathInput.style.color = '#999';
+            if (badge) badge.style.display = 'none';
         }
     } catch (error) {
         console.error('Failed to load postgres config:', error);
@@ -1488,6 +1498,7 @@ async function loadConfig() {
         const response = await fetch('/api/config/mysql-bin');
         const result = await response.json();
         const pathInput = document.getElementById('mysql-bin-path');
+        const badge = document.getElementById('mysql-version-badge');
 
         if (result.path && result.path.trim() !== '') {
             // Path is configured, show the actual path
@@ -1496,6 +1507,14 @@ async function loadConfig() {
             pathInput.style.border = '2px solid #e0e0e0';
             pathInput.style.fontStyle = 'normal';
             pathInput.style.color = '#333';
+            if (badge) {
+                if (result.version) {
+                    badge.textContent = `v${result.version}`;
+                    badge.style.display = 'inline-block';
+                } else {
+                    badge.style.display = 'none';
+                }
+            }
         } else {
             // No path configured, show placeholder
             pathInput.value = '';
@@ -1503,6 +1522,7 @@ async function loadConfig() {
             pathInput.style.border = '1px dashed #ccc';
             pathInput.style.fontStyle = 'italic';
             pathInput.style.color = '#999';
+            if (badge) badge.style.display = 'none';
         }
     } catch (error) {
         console.error('Failed to load config:', error);

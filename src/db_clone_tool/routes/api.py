@@ -308,10 +308,17 @@ def cancel_clone_job(job_id):
 
 @api_bp.route('/config/mysql-bin', methods=['GET'])
 def get_mysql_bin_config():
-    """Get MySQL bin path configuration"""
+    """Get MySQL bin path + matching version, so the Configuration panel
+    can show which MySQL is in use (path alone is opaque)."""
     try:
         path = config.get_mysql_bin_path()
-        return jsonify({"path": path})
+        version = None
+        if path:
+            for inst in detect_installed_versions():
+                if inst.get('bin_path') == path:
+                    version = inst.get('version')
+                    break
+        return jsonify({"path": path, "version": version})
     except Exception as e:
         logger.error(f"Error getting config: {e}")
         return jsonify({"error": str(e)}), 500
@@ -338,10 +345,18 @@ def set_mysql_bin_config():
 
 @api_bp.route('/config/postgres-bin', methods=['GET'])
 def get_postgres_bin_config():
-    """Get PostgreSQL bin path configuration."""
+    """Get PostgreSQL bin path configuration + the matching version, so the
+    main Configuration panel can show which PG the user is actually using
+    (path alone doesn't tell them)."""
     try:
         path = config.get_postgres_bin_path()
-        return jsonify({"path": path})
+        version = None
+        if path:
+            for inst in pgdl.detect_installed_versions():
+                if inst.get('bin_path') == path:
+                    version = inst.get('version')
+                    break
+        return jsonify({"path": path, "version": version})
     except Exception as e:
         logger.error(f"Error getting postgres config: {e}")
         return jsonify({"error": str(e)}), 500
