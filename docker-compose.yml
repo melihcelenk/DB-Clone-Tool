@@ -20,6 +20,8 @@ services:
     environment:
       # MySQL bin path (pre-configured in container)
       - DB_CLONE_MYSQL_BIN=/app/mysql/bin
+      # PostgreSQL bin path (pre-configured in container)
+      - DB_CLONE_POSTGRES_BIN=/app/postgres/bin
       # Config directory
       - DB_CLONE_CONFIG_DIR=/app/config.local
       # Flask environment
@@ -27,6 +29,11 @@ services:
       - FLASK_DEBUG=0
 
     restart: unless-stopped
+
+    extra_hosts:
+      # Lets the container reach databases running on the host machine
+      # via the hostname "host.docker.internal" (Docker Desktop + Linux).
+      - "host.docker.internal:host-gateway"
 
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/api/health').read()"]

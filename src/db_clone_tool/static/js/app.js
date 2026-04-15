@@ -8,8 +8,53 @@ let availableSchemas = []; // Store schemas for dropdowns
 document.addEventListener('DOMContentLoaded', function() {
     loadConnections();
     loadConfig();
+    loadPostgresConfig();
     updateActiveConnectionButtons(); // Initialize button states
 });
+
+// ----- DB Type helpers (MySQL / PostgreSQL) -----
+
+const DB_TYPE_DEFAULTS = {
+    mysql: {port: 3306, label: 'MySQL'},
+    postgres: {port: 5432, label: 'PostgreSQL'}
+};
+
+function getSelectedDbType() {
+    const el = document.getElementById('connection-db-type');
+    return (el && el.value) ? el.value : 'mysql';
+}
+
+// Called when the DB type dropdown in the Add/Edit Connection modal changes.
+// Snaps the port input to the engine's default (only if user hasn't typed
+// a non-default value for the *other* engine) and switches the config warning.
+function onDbTypeChange() {
+    const dbType = getSelectedDbType();
+    const portInput = document.getElementById('connection-port-input');
+    if (portInput) {
+        const currentVal = parseInt(portInput.value, 10);
+        // Only overwrite when current value equals the OTHER engine's default,
+        // so users who explicitly typed e.g. 5433 don't get clobbered.
+        const otherDefault = dbType === 'mysql' ? 5432 : 3306;
+        if (!currentVal || currentVal === otherDefault) {
+            portInput.value = DB_TYPE_DEFAULTS[dbType].port;
+        }
+    }
+    updateConnectionModalWarnings();
+}
+
+async function updateConnectionModalWarnings() {
+    const dbType = getSelectedDbType();
+    const mysqlWarning = document.getElementById('mysql-config-warning');
+    const pgWarning = document.getElementById('postgres-config-warning');
+    if (mysqlWarning) mysqlWarning.style.display = 'none';
+    if (pgWarning) pgWarning.style.display = 'none';
+
+    if (dbType === 'postgres') {
+        await checkPostgresConfigWarning();
+    } else {
+        await checkMySQLConfigWarning();
+    }
+}
 
 // Load connections
 async function loadConnections() {
@@ -17,8 +62,90 @@ async function loadConnections() {
         const response = await fetch('/api/connections');
         const connections = await response.json();
         renderConnections(connections);
+        populateImportConnectionDropdown(connections);
     } catch (error) {
         console.error('Failed to load connections:', error);
+    }
+}
+
+// Keep a cached copy of connections so the Import Dump panel can re-render
+// its target-connection dropdown and engine hints without another fetch.
+let _allConnectionsCache = [];
+
+// Populate the "Target Connection" dropdown in the Import Dump panel with
+// every saved connection, prefixing each with an engine tag so the user can
+// see at a glance which engine each connection targets.
+function populateImportConnectionDropdown(connections) {
+    _allConnectionsCache = connections || [];
+    const sel = document.getElementById('import-target-connection-select');
+    if (!sel) return;
+
+    const previousValue = sel.value || currentConnectionId || '';
+
+    sel.innerHTML = '<option value="">Select target connection...</option>' +
+        _allConnectionsCache.map(c => {
+            const dbType = (c.db_type || 'mysql').toLowerCase();
+            const tag = dbType === 'postgres' ? '[PG]' : '[MySQL]';
+            return `<option value="${c.id}">${tag} ${escapeHtml(c.name)} (${escapeHtml(c.host)}:${c.port})</option>`;
+        }).join('');
+
+    // Prefer the previously chosen connection, then the currently-selected
+    // connection from the left panel, else leave blank.
+    if (previousValue && _allConnectionsCache.some(c => c.id === previousValue)) {
+        sel.value = previousValue;
+    } else if (currentConnectionId && _allConnectionsCache.some(c => c.id === currentConnectionId)) {
+        sel.value = currentConnectionId;
+    }
+
+    updateImportEngineHint();
+}
+
+function getImportConnectionId() {
+    const sel = document.getElementById('import-target-connection-select');
+    return (sel && sel.value) || currentConnectionId || '';
+}
+
+function updateImportEngineHint() {
+    const hint = document.getElementById('import-engine-hint');
+    if (!hint) return;
+    const id = getImportConnectionId();
+    const conn = _allConnectionsCache.find(c => c.id === id);
+    if (!conn) {
+        hint.textContent = '';
+        return;
+    }
+    const dbType = (conn.db_type || 'mysql').toLowerCase();
+    if (dbType === 'postgres') {
+        hint.innerHTML = 'Engine: <strong>PostgreSQL</strong> — expects .sql (psql) or .backup/.dump (pg_restore). MySQL dumps (backticks) won\'t work.';
+    } else {
+        hint.innerHTML = 'Engine: <strong>MySQL</strong> — expects .sql dumps from mysqldump. PostgreSQL dumps won\'t work.';
+    }
+}
+
+// Called when the Import Dump target-connection dropdown changes.
+// Refreshes the target-schema dropdown with that connection's schemas so the
+// user can pick an existing DB or type a new name.
+async function onImportConnectionChange() {
+    updateImportEngineHint();
+    const id = getImportConnectionId();
+    const schemaSelect = document.getElementById('import-target-schema-select');
+    if (!schemaSelect) return;
+    schemaSelect.innerHTML = '<option value="">Select target schema...</option>';
+    if (!id) return;
+    try {
+        const r = await fetch(`/api/schemas/${id}`);
+        if (!r.ok) return;
+        const schemas = await r.json();
+        if (Array.isArray(schemas)) {
+            schemas.forEach(s => {
+                const opt = document.createElement('option');
+                opt.value = s.name;
+                opt.textContent = s.name;
+                schemaSelect.appendChild(opt);
+            });
+        }
+    } catch (e) {
+        console.warn('Could not load schemas for import target:', e);
     }
 }
 
@@ -30,20 +157,28 @@ function renderConnections(connections) {
         return;
     }
     
-    list.innerHTML = connections.map(conn => `
-        <div class="connection-item ${conn.id === currentConnectionId ? 'active' : ''}" 
+    list.innerHTML = connections.map(conn => {
+        const dbType = (conn.db_type || 'mysql').toLowerCase();
+        const badgeLabel = dbType === 'postgres' ? 'PG' : 'MySQL';
+        const badgeColor = dbType === 'postgres' ? '#336791' : '#00758f';
+        return `
+        <div class="connection-item ${conn.id === currentConnectionId ? 'active' : ''}"
              onclick="selectConnection('${conn.id}')">
-            <div class="connection-name">${escapeHtml(conn.name)}</div>
+            <div class="connection-name">
+                <span style="display:inline-block; background:${badgeColor}; color:#fff; border-radius:3px; padding:1px 6px; font-size:10px; margin-right:6px; vertical-align:middle;">${badgeLabel}</span>
+                ${escapeHtml(conn.name)}
+            </div>
             <div class="connection-details">${escapeHtml(conn.host)}:${conn.port}</div>
             <div class="connection-details">${conn.database || 'All databases'}</div>
             <div style="display: flex; gap: 5px; margin-top: 8px;">
-                <button class="btn btn-secondary" onclick="event.stopPropagation(); editConnection('${conn.id}')" 
+                <button class="btn btn-secondary" onclick="event.stopPropagation(); editConnection('${conn.id}')"
                         style="padding: 5px 10px; font-size: 12px; flex: 1;">Edit</button>
-                <button class="btn btn-danger" onclick="event.stopPropagation(); deleteConnection('${conn.id}')" 
+                <button class="btn btn-danger" onclick="event.stopPropagation(); deleteConnection('${conn.id}')"
                         style="padding: 5px 10px; font-size: 12px; flex: 1;">Delete</button>
             </div>
         </div>
-    `).join('');
+        `;
+    }).join('');
 }
 
 // Select connection
@@ -191,9 +326,13 @@ function updateSchemaDropdowns() {
             availableSchemas.map(s => `<option value="${escapeHtml(s.name)}">${escapeHtml(s.name)}</option>`).join('');
     }
     
-    // Update import target schema dropdown
+    // Update import target schema dropdown ONLY when the import panel's target
+    // connection matches the left-panel's currently-selected connection —
+    // otherwise we'd clobber the schemas of a deliberately different import target.
     const importSelect = document.getElementById('import-target-schema-select');
-    if (importSelect) {
+    const importConnSel = document.getElementById('import-target-connection-select');
+    const importSameAsCurrent = !importConnSel || !importConnSel.value || importConnSel.value === currentConnectionId;
+    if (importSelect && importSameAsCurrent) {
         importSelect.innerHTML = '<option value="">Select target schema...</option>' +
             availableSchemas.map(s => `<option value="${escapeHtml(s.name)}">${escapeHtml(s.name)}</option>`).join('');
     }
@@ -654,28 +793,32 @@ async function editConnection(connectionId) {
         }
         
         // Fill form with connection data
-        document.getElementById('add-connection-form').reset();
-        document.getElementById('add-connection-form').querySelector('[name="name"]').value = conn.name || '';
-        document.getElementById('add-connection-form').querySelector('[name="host"]').value = conn.host || '';
-        document.getElementById('add-connection-form').querySelector('[name="port"]').value = conn.port || '3306';
-        document.getElementById('add-connection-form').querySelector('[name="user"]').value = conn.user || '';
-        document.getElementById('add-connection-form').querySelector('[name="password"]').value = conn.password || '';
-        document.getElementById('add-connection-form').querySelector('[name="database"]').value = conn.database || '';
-        
+        const form = document.getElementById('add-connection-form');
+        form.reset();
+        const dbType = (conn.db_type || 'mysql').toLowerCase();
+        form.querySelector('[name="name"]').value = conn.name || '';
+        const dbTypeSelect = form.querySelector('[name="db_type"]');
+        if (dbTypeSelect) dbTypeSelect.value = dbType;
+        form.querySelector('[name="host"]').value = conn.host || '';
+        form.querySelector('[name="port"]').value = conn.port || (dbType === 'postgres' ? '5432' : '3306');
+        form.querySelector('[name="user"]').value = conn.user || '';
+        form.querySelector('[name="password"]').value = conn.password || '';
+        form.querySelector('[name="database"]').value = conn.database || '';
+
         // Store connection ID for update
-        document.getElementById('add-connection-form').dataset.connectionId = connectionId;
-        
+        form.dataset.connectionId = connectionId;
+
         // Change form title and button
         document.querySelector('#add-connection-modal .modal-title').textContent = 'Edit Connection';
         const submitBtn = document.querySelector('#add-connection-form button[type="submit"]');
         submitBtn.textContent = 'Update Connection';
-        
+
         // Show modal
         document.getElementById('connection-result').style.display = 'none';
         document.getElementById('add-connection-modal').style.display = 'flex';
 
-        // Check MySQL config status
-        await checkMySQLConfigWarning();
+        // Check config status for the selected engine
+        await updateConnectionModalWarnings();
     } catch (error) {
         showNotification('error', 'Error: ' + error.message);
     }
@@ -718,14 +861,19 @@ async function showAddConnectionModal() {
     const form = document.getElementById('add-connection-form');
     form.reset();
     delete form.dataset.connectionId;
+    // Default to MySQL for new connections
+    const dbTypeSelect = form.querySelector('[name="db_type"]');
+    if (dbTypeSelect) dbTypeSelect.value = 'mysql';
+    const portInput = form.querySelector('[name="port"]');
+    if (portInput) portInput.value = '3306';
     document.querySelector('#add-connection-modal .modal-title').textContent = 'Add Connection';
     const submitBtn = form.querySelector('button[type="submit"]');
     submitBtn.textContent = 'Add Connection';
     document.getElementById('connection-result').style.display = 'none';
     document.getElementById('add-connection-modal').style.display = 'flex';
 
-    // Check MySQL config status and show warning if not configured or invalid
-    await checkMySQLConfigWarning();
+    // Show the correct warning for the initial db_type
+    await updateConnectionModalWarnings();
 }
 
 // Check MySQL config and show/hide warning banner
@@ -873,12 +1021,484 @@ async function saveConfig(event) {
     }
 }
 
+// ============================================================
+//  PostgreSQL Config — mirrors MySQL Config flow (DBC-3)
+//  Choice screen → (Download | Manual Path)
+// ============================================================
+
+let _pgDownloadPollInterval = null;
+
+function showPostgresConfigModal() {
+    const modal = document.getElementById('postgres-config-modal');
+    if (!modal) return;
+    showPostgresConfigChoiceScreen();  // always start at choice screen
+    modal.style.display = 'flex';
+}
+
+function showPostgresConfigChoiceScreen() {
+    document.getElementById('postgres-config-choice-screen').style.display = 'block';
+    document.getElementById('postgres-manual-path-form').style.display = 'none';
+    document.getElementById('postgres-download-form').style.display = 'none';
+    const result = document.getElementById('postgres-config-result');
+    if (result) result.style.display = 'none';
+}
+
+function handleShowPostgresManualForm() {
+    showPostgresManualForm().catch(err => {
+        console.error('Error showing PG manual form:', err);
+        showNotification('error', 'Error loading manual path form: ' + err.message);
+    });
+}
+
+async function showPostgresManualForm() {
+    document.getElementById('postgres-config-choice-screen').style.display = 'none';
+    document.getElementById('postgres-manual-path-form').style.display = 'block';
+    document.getElementById('postgres-download-form').style.display = 'none';
+    // Pre-fill with current saved value, if any
+    try {
+        const d = await fetch('/api/config/postgres-bin').then(r => r.json());
+        document.getElementById('postgres-bin-input').value = (d && d.path) || '';
+    } catch (e) { /* ignore */ }
+    const result = document.getElementById('postgres-config-result');
+    if (result) result.style.display = 'none';
+}
+
+function handleShowPostgresDownloadForm() {
+    showPostgresDownloadForm().catch(err => {
+        console.error('Error showing PG download form:', err);
+        showNotification('error', 'Error loading download form: ' + err.message);
+    });
+}
+
+async function showPostgresDownloadForm() {
+    document.getElementById('postgres-config-choice-screen').style.display = 'none';
+    document.getElementById('postgres-manual-path-form').style.display = 'none';
+    document.getElementById('postgres-download-form').style.display = 'block';
+
+    await loadPostgresVersionsWithStatus();
+    await loadPostgresDefaultDirectory();
+
+    // Reset advanced options
+    const toggle = document.getElementById('postgres-advanced-options-toggle');
+    if (toggle) toggle.checked = false;
+    const destGroup = document.getElementById('postgres-destination-directory-group');
+    if (destGroup) destGroup.style.display = 'none';
+    const destInput = document.getElementById('postgres-dest-input');
+    if (destInput) destInput.value = '';
+}
+
+function togglePostgresAdvancedOptions() {
+    const toggle = document.getElementById('postgres-advanced-options-toggle');
+    const destGroup = document.getElementById('postgres-destination-directory-group');
+    if (toggle.checked) {
+        destGroup.style.display = 'block';
+        loadPostgresDefaultDirectory();
+    } else {
+        destGroup.style.display = 'none';
+        document.getElementById('postgres-dest-input').value = '';
+    }
+}
+
+async function loadPostgresDefaultDirectory() {
+    try {
+        const resp = await fetch('/api/postgres/default-directory');
+        if (resp.ok) {
+            const data = await resp.json();
+            const destInput = document.getElementById('postgres-dest-input');
+            if (destInput) destInput.placeholder = `Leave empty for: ${data.path}`;
+        }
+    } catch (e) {
+        const destInput = document.getElementById('postgres-dest-input');
+        if (destInput) destInput.placeholder = 'Leave empty for default location';
+    }
+}
+
+async function loadPostgresVersionsWithStatus() {
+    const loadingDiv = document.getElementById('postgres-versions-loading');
+    const versionsList = document.getElementById('postgres-versions-list');
+    const installedContainer = document.getElementById('postgres-installed-versions-container');
+    const availableContainer = document.getElementById('postgres-available-versions-container');
+    const unsupportedBanner = document.getElementById('postgres-download-unsupported');
+
+    if (!loadingDiv || !versionsList || !installedContainer || !availableContainer) {
+        console.error('PG version list elements missing');
+        return;
+    }
+
+    loadingDiv.style.display = 'block';
+    versionsList.style.display = 'none';
+    installedContainer.innerHTML = '';
+    availableContainer.innerHTML = '';
+    if (unsupportedBanner) unsupportedBanner.style.display = 'none';
+
+    try {
+        const response = await fetch('/api/postgres/versions');
+        if (!response.ok) throw new Error(`Server error: ${response.status}`);
+        const data = await response.json();
+
+        const downloadSupported = data.download_supported !== false;
+        if (!downloadSupported && unsupportedBanner) {
+            unsupportedBanner.style.display = 'block';
+        }
+
+        const installed = [];
+        const available = [];
+        data.versions.forEach(v => (v.installed ? installed : available).push(v));
+
+        if (installed.length) {
+            installed.forEach(v => installedContainer.appendChild(renderPostgresVersionItem(v)));
+        } else {
+            installedContainer.innerHTML = '<p style="color: #999; font-size: 13px; padding: 10px;">No installed versions found.</p>';
+        }
+
+        // Hide the "Available for Download" section entirely when auto-download
+        // isn't supported (Linux/macOS) — the banner above already explains why.
+        // Otherwise users click Download and get a confusing error.
+        const availableSection = document.getElementById('postgres-available-versions-section');
+        if (!downloadSupported) {
+            if (availableSection) availableSection.style.display = 'none';
+        } else {
+            if (availableSection) availableSection.style.display = '';
+            if (available.length) {
+                available.forEach(v => availableContainer.appendChild(renderPostgresVersionItem(v)));
+            } else {
+                availableContainer.innerHTML = '<p style="color: #999; font-size: 13px; padding: 10px;">No versions available.</p>';
+            }
+        }
+
+        loadingDiv.style.display = 'none';
+        versionsList.style.display = 'block';
+    } catch (error) {
+        console.error('Failed to load PG versions:', error);
+        if (loadingDiv) {
+            loadingDiv.innerHTML = `<p style="color: #d32f2f;">Error loading versions: ${error.message}</p>`;
+        }
+    }
+}
+
+function renderPostgresVersionItem(versionInfo) {
+    // Reuse MySQL's .version-item CSS classes for consistent look
+    const item = document.createElement('div');
+    item.className = 'version-item';
+    item.setAttribute('data-version', versionInfo.version);
+
+    const header = document.createElement('div');
+    header.className = 'version-header';
+
+    if (versionInfo.installed) {
+        const statusIcon = document.createElement('span');
+        statusIcon.className = 'version-status-icon ' + (versionInfo.is_valid ? 'valid' : 'invalid');
+        header.appendChild(statusIcon);
+    }
+
+    const title = document.createElement('div');
+    title.className = 'version-title';
+    const versionText = document.createElement('span');
+    versionText.textContent = `PostgreSQL ${versionInfo.version}`;
+    title.appendChild(versionText);
+
+    if (versionInfo.recommended) {
+        const badge = document.createElement('span');
+        badge.className = 'version-badge recommended';
+        badge.textContent = 'Recommended';
+        title.appendChild(badge);
+    }
+    if (versionInfo.installed) {
+        const badge = document.createElement('span');
+        badge.className = 'version-badge ' + (versionInfo.is_valid ? 'installed' : 'invalid');
+        badge.textContent = versionInfo.is_valid ? '✓ Installed' : '⚠ Invalid';
+        title.appendChild(badge);
+    }
+    header.appendChild(title);
+
+    const actionsDiv = document.createElement('div');
+    actionsDiv.className = 'version-actions';
+    if (versionInfo.installed) {
+        const useBtn = document.createElement('button');
+        useBtn.className = 'btn btn-success btn-small';
+        useBtn.textContent = 'Use';
+        useBtn.onclick = () => usePostgresVersion(versionInfo.version, versionInfo.bin_path);
+        actionsDiv.appendChild(useBtn);
+    } else {
+        const dlBtn = document.createElement('button');
+        dlBtn.className = 'btn btn-success btn-small';
+        dlBtn.textContent = 'Download';
+        dlBtn.onclick = () => downloadPostgresVersion(versionInfo.version);
+        actionsDiv.appendChild(dlBtn);
+    }
+    header.appendChild(actionsDiv);
+
+    if (versionInfo.installed && versionInfo.bin_path) {
+        const expandIcon = document.createElement('span');
+        expandIcon.className = 'version-expand-icon';
+        expandIcon.innerHTML = '▼';
+        header.appendChild(expandIcon);
+        item.classList.add('version-item-expandable');
+        item.style.cursor = 'pointer';
+
+        const pathContainer = document.createElement('div');
+        pathContainer.className = 'version-path-container';
+        pathContainer.style.display = 'none';
+        const pathContent = document.createElement('div');
+        pathContent.className = 'version-path';
+        pathContent.textContent = versionInfo.bin_path;
+        pathContainer.appendChild(pathContent);
+
+        item.addEventListener('click', e => {
+            if (e.target.closest('.btn') || e.target.closest('.version-actions')) return;
+            const isHidden = pathContainer.style.display === 'none';
+            pathContainer.style.display = isHidden ? 'block' : 'none';
+            expandIcon.innerHTML = isHidden ? '▲' : '▼';
+        });
+
+        item.appendChild(header);
+        item.appendChild(pathContainer);
+    } else {
+        item.appendChild(header);
+    }
+
+    return item;
+}
+
+async function usePostgresVersion(version, binPath) {
+    try {
+        const resp = await fetch('/api/postgres/use', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({bin_path: binPath}),
+        });
+        const result = await resp.json();
+        if (result.success) {
+            showNotification('success', `Using PostgreSQL ${version}`);
+            await loadPostgresConfig();
+            closeModal('postgres-config-modal');
+        } else {
+            showNotification('error', result.error || 'Failed to use PostgreSQL version');
+        }
+    } catch (e) {
+        showNotification('error', 'Error: ' + e.message);
+    }
+}
+
+async function downloadPostgresVersion(version) {
+    const destInput = document.getElementById('postgres-dest-input');
+    const destination = destInput ? destInput.value.trim() : '';
+
+    // Open progress modal
+    document.getElementById('postgres-download-version').textContent = `PostgreSQL ${version}`;
+    document.getElementById('postgres-download-progress-fill').style.width = '0%';
+    document.getElementById('postgres-download-progress-fill').textContent = '0%';
+    document.getElementById('postgres-download-status').textContent = 'Starting download...';
+    document.getElementById('postgres-download-status').style.color = '#666';
+    document.getElementById('postgres-download-result-message').style.display = 'none';
+    document.getElementById('postgres-cancel-download-btn').style.display = 'block';
+    document.getElementById('postgres-download-return-btn').style.display = 'none';
+    document.getElementById('postgres-download-modal').style.display = 'flex';
+
+    try {
+        const resp = await fetch('/api/postgres/download', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({version, destination}),
+        });
+
+        if (!resp.ok) {
+            const err = await resp.json().catch(() => ({error: 'Unknown error'}));
+            throw new Error(err.error || `Server error ${resp.status}`);
+        }
+        const {job_id} = await resp.json();
+
+        _pgDownloadPollInterval = setInterval(async () => {
+            try {
+                const r = await fetch(`/api/postgres/download/progress/${job_id}`);
+                const data = await r.json();
+
+                const phaseText = {
+                    downloading: 'Downloading...',
+                    extracting: 'Extracting...',
+                    validating: 'Validating...',
+                    done: 'Completed',
+                }[data.phase] || 'Working...';
+                document.getElementById('postgres-download-status').textContent =
+                    `${phaseText} (${data.percent}%)`;
+                const fill = document.getElementById('postgres-download-progress-fill');
+                fill.style.width = `${data.percent}%`;
+                fill.textContent = `${data.percent}%`;
+
+                if (data.status === 'completed') {
+                    clearInterval(_pgDownloadPollInterval);
+                    showPostgresDownloadSuccess(data.bin_path);
+                } else if (data.status === 'failed') {
+                    clearInterval(_pgDownloadPollInterval);
+                    showPostgresDownloadError(data.error || 'Download failed');
+                }
+            } catch (pollErr) {
+                clearInterval(_pgDownloadPollInterval);
+                showPostgresDownloadError(pollErr.message);
+            }
+        }, 500);
+    } catch (e) {
+        if (_pgDownloadPollInterval) clearInterval(_pgDownloadPollInterval);
+        showPostgresDownloadError(e.message);
+    }
+}
+
+function showPostgresDownloadSuccess(binPath) {
+    document.getElementById('postgres-download-progress-fill').style.width = '100%';
+    document.getElementById('postgres-download-progress-fill').textContent = '100%';
+    document.getElementById('postgres-download-status').textContent = 'Download completed!';
+    document.getElementById('postgres-download-status').style.color = '#28a745';
+
+    const resultDiv = document.getElementById('postgres-download-result-message');
+    resultDiv.className = 'result success';
+    resultDiv.style.display = 'block';
+    document.getElementById('postgres-download-result-title').textContent = '✓ Download completed!';
+    document.getElementById('postgres-download-result-detail').textContent = binPath ? `Installed at: ${binPath}` : '';
+
+    if (binPath) {
+        fetch('/api/config/postgres-bin', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({path: binPath}),
+        }).then(() => loadPostgresConfig());
+    }
+
+    document.getElementById('postgres-cancel-download-btn').style.display = 'none';
+    document.getElementById('postgres-download-return-btn').style.display = 'block';
+    loadPostgresVersionsWithStatus();
+}
+
+function showPostgresDownloadError(msg) {
+    document.getElementById('postgres-download-status').textContent = 'Error: ' + msg;
+    document.getElementById('postgres-download-status').style.color = '#d32f2f';
+    document.getElementById('postgres-download-progress-fill').style.width = '0%';
+    document.getElementById('postgres-download-progress-fill').textContent = '0%';
+
+    const resultDiv = document.getElementById('postgres-download-result-message');
+    resultDiv.className = 'result error';
+    resultDiv.style.display = 'block';
+    document.getElementById('postgres-download-result-title').textContent = '✗ Download failed';
+    document.getElementById('postgres-download-result-detail').textContent = msg;
+
+    document.getElementById('postgres-cancel-download-btn').style.display = 'none';
+    document.getElementById('postgres-download-return-btn').style.display = 'block';
+}
+
+function cancelPostgresDownload() {
+    if (_pgDownloadPollInterval) clearInterval(_pgDownloadPollInterval);
+    closeModal('postgres-download-modal');
+}
+
+function returnFromPostgresDownload() {
+    if (_pgDownloadPollInterval) clearInterval(_pgDownloadPollInterval);
+    closeModal('postgres-download-modal');
+    closeModal('postgres-config-modal');
+}
+
+async function savePostgresConfig(event) {
+    event.preventDefault();
+    const path = document.getElementById('postgres-bin-input').value.trim();
+    try {
+        const response = await fetch('/api/config/postgres-bin', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({path: path})
+        });
+        const result = await response.json();
+        if (result.success) {
+            showResult('postgres-config-result', 'Configuration saved!', 'success');
+            loadPostgresConfig();
+            setTimeout(() => closeModal('postgres-config-modal'), 1500);
+        } else {
+            showResult('postgres-config-result', result.error || 'Failed to save configuration', 'error');
+        }
+    } catch (error) {
+        showResult('postgres-config-result', 'Error: ' + error.message, 'error');
+    }
+}
+
+// Test the currently entered Postgres bin path without saving it.
+// Uses the same validation endpoint (POST returns 400 on invalid, 200 on valid).
+async function testPostgresPath() {
+    const path = document.getElementById('postgres-bin-input').value.trim();
+    if (!path) {
+        showResult('postgres-config-result', 'Enter a path first.', 'error');
+        return;
+    }
+    try {
+        // We don't have a separate validate endpoint — the POST endpoint
+        // returns 400 with an error message if the path is invalid. Use it
+        // read-only by asking the server to save the SAME path that was
+        // already saved. Simpler: call the dedicated test by POSTing.
+        const response = await fetch('/api/config/postgres-bin', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({path: path})
+        });
+        const result = await response.json();
+        if (result.success) {
+            showResult('postgres-config-result', 'Path is valid — pg_dump, pg_restore and psql found.', 'success');
+        } else {
+            showResult('postgres-config-result', result.error || 'Invalid path', 'error');
+        }
+    } catch (error) {
+        showResult('postgres-config-result', 'Error: ' + error.message, 'error');
+    }
+}
+
+async function loadPostgresConfig() {
+    const pathInput = document.getElementById('postgres-bin-path');
+    const badge = document.getElementById('postgres-version-badge');
+    if (!pathInput) return;
+    try {
+        const response = await fetch('/api/config/postgres-bin');
+        const result = await response.json();
+        if (result && result.path && result.path.trim() !== '') {
+            pathInput.value = result.path;
+            pathInput.style.background = 'white';
+            pathInput.style.border = '2px solid #e0e0e0';
+            pathInput.style.fontStyle = 'normal';
+            pathInput.style.color = '#333';
+            if (badge) {
+                if (result.version) {
+                    badge.textContent = `v${result.version}`;
+                    badge.style.display = 'inline-block';
+                } else {
+                    badge.style.display = 'none';
+                }
+            }
+        } else {
+            pathInput.value = '';
+            pathInput.style.background = '#f8f9fa';
+            pathInput.style.border = '1px dashed #ccc';
+            pathInput.style.fontStyle = 'italic';
+            pathInput.style.color = '#999';
+            if (badge) badge.style.display = 'none';
+        }
+    } catch (error) {
+        console.error('Failed to load postgres config:', error);
+    }
+}
+
+async function checkPostgresConfigWarning() {
+    const warning = document.getElementById('postgres-config-warning');
+    if (!warning) return;
+    try {
+        const resp = await fetch('/api/config/postgres-bin');
+        const data = await resp.json();
+        warning.style.display = (data && data.path) ? 'none' : 'block';
+    } catch (e) {
+        warning.style.display = 'block';
+    }
+}
+
 // Load config
 async function loadConfig() {
     try {
         const response = await fetch('/api/config/mysql-bin');
         const result = await response.json();
         const pathInput = document.getElementById('mysql-bin-path');
+        const badge = document.getElementById('mysql-version-badge');
 
         if (result.path && result.path.trim() !== '') {
             // Path is configured, show the actual path
@@ -887,6 +1507,14 @@ async function loadConfig() {
             pathInput.style.border = '2px solid #e0e0e0';
             pathInput.style.fontStyle = 'normal';
             pathInput.style.color = '#333';
+            if (badge) {
+                if (result.version) {
+                    badge.textContent = `v${result.version}`;
+                    badge.style.display = 'inline-block';
+                } else {
+                    badge.style.display = 'none';
+                }
+            }
         } else {
             // No path configured, show placeholder
             pathInput.value = '';
@@ -894,6 +1522,7 @@ async function loadConfig() {
             pathInput.style.border = '1px dashed #ccc';
             pathInput.style.fontStyle = 'italic';
             pathInput.style.color = '#999';
+            if (badge) badge.style.display = 'none';
         }
     } catch (error) {
         console.error('Failed to load config:', error);
@@ -908,6 +1537,10 @@ function closeModal(modalId) {
     if (modalId === 'config-modal') {
         showConfigChoiceScreen();
     }
+    // Same reset for Postgres config modal
+    if (modalId === 'postgres-config-modal') {
+        showPostgresConfigChoiceScreen();
+    }
 }
 
 // Show result
@@ -918,54 +1551,62 @@ function showResult(elementId, message, type) {
     element.style.display = 'block';
 }
 
-// Import dump file
+// Import dump file — uses the dedicated "Target Connection" dropdown in the
+// Import Dump panel (not the left-panel selection), so the user can direct
+// a MySQL dump to a MySQL connection even while browsing a PG connection.
 async function importDump() {
     const fileInput = document.getElementById('dump-file-input');
     const targetSelect = document.getElementById('import-target-schema-select');
     const targetInput = document.getElementById('import-target-schema-input');
-    
+
+    const importConnectionId = getImportConnectionId();
     const targetSchema = (targetSelect && targetSelect.value) || (targetInput ? targetInput.value.trim() : '');
-    
+
+    if (!importConnectionId) {
+        showNotification('warning', 'Please select a target connection for the import');
+        return;
+    }
+
     if (!fileInput.files || fileInput.files.length === 0) {
         showNotification('warning', 'Please select a SQL dump file');
         return;
     }
-    
+
     if (!targetSchema) {
         showNotification('warning', 'Please select or enter target schema name');
         return;
     }
-    
-    if (!currentConnectionId) {
-        showNotification('warning', 'Please select a connection first');
-        return;
-    }
-    
-    const confirmed = await showConfirm(`Import dump to schema '${targetSchema}'? This will overwrite existing data if the schema exists.`, 'Import Dump', 'Import', 'Cancel');
+
+    const conn = _allConnectionsCache.find(c => c.id === importConnectionId);
+    const engineLabel = conn ? ((conn.db_type || 'mysql').toLowerCase() === 'postgres' ? 'PostgreSQL' : 'MySQL') : '';
+    const confirmMsg =
+        `Import dump to ${engineLabel} schema '${targetSchema}' on '${conn ? conn.name : '?'}'?` +
+        ` This will overwrite existing data if the schema exists.`;
+
+    const confirmed = await showConfirm(confirmMsg, 'Import Dump', 'Import', 'Cancel');
     if (!confirmed) {
         return;
     }
-    
+
     const formData = new FormData();
     formData.append('file', fileInput.files[0]);
-    formData.append('connection_id', currentConnectionId);
+    formData.append('connection_id', importConnectionId);
     formData.append('target_schema', targetSchema);
-    
+
     try {
         const response = await fetch('/api/import/dump', {
             method: 'POST',
             body: formData
         });
-        
+
         const result = await response.json();
-        
+
         if (result.success) {
             showNotification('success', `Dump imported successfully to schema '${targetSchema}'!`);
-            // Reload schemas
-            if (currentConnectionId) {
+            // If we imported into the currently-browsed connection, refresh its schema list
+            if (importConnectionId === currentConnectionId) {
                 await loadSchemas(currentConnectionId);
             }
-            // Clear inputs
             fileInput.value = '';
             if (targetSelect) targetSelect.value = '';
             if (targetInput) targetInput.value = '';

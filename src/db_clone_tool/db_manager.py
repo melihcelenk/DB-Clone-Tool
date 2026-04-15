@@ -4,6 +4,7 @@ MySQL database connection and schema management
 import pymysql
 from typing import List, Dict, Optional, Tuple
 from src.db_clone_tool.storage import get_connection
+from src.db_clone_tool.network import resolve_db_host
 
 
 class DatabaseManager:
@@ -33,7 +34,7 @@ class DatabaseManager:
         """
         try:
             self.conn = pymysql.connect(
-                host=self.connection_info['host'],
+                host=resolve_db_host(self.connection_info['host']),
                 port=int(self.connection_info.get('port', 3306)),
                 user=self.connection_info['user'],
                 password=self.connection_info['password'],

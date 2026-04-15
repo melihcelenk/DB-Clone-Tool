@@ -242,4 +242,7 @@ class TestWebRoutes:
         """Test index route"""
         response = client.get('/')
         assert response.status_code == 200
-        assert b'MySQL Schema Clone Tool' in response.data
+        # Title now reflects dual-engine support (DBC-3: PostgreSQL added)
+        assert b'Schema Clone Tool' in response.data
+        assert b'MySQL' in response.data
+        assert b'PostgreSQL' in response.data

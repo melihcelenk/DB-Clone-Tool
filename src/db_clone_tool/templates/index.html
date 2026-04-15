@@ -3,12 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MySQL Schema Clone Tool</title>
+    <title>MySQL &amp; PostgreSQL Schema Clone Tool</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
     <div class="container">
-        <h1>🗄️ MySQL Schema Clone Tool</h1>
+        <h1>🗄️ MySQL &amp; PostgreSQL Schema Clone Tool</h1>
         
         <!-- Left Panel: Connections -->
         <div class="panel">
@@ -33,12 +33,26 @@
             <h2>Configuration</h2>
             <div class="config-section">
                 <div class="config-item">
-                    <div class="config-label">MySQL Bin Path</div>
+                    <div class="config-label">
+                        MySQL Bin Path
+                        <span id="mysql-version-badge" style="display:none; margin-left:8px; background:#00758f; color:#fff; border-radius:3px; padding:1px 6px; font-size:11px; vertical-align:middle;"></span>
+                    </div>
                     <input type="text" id="mysql-bin-path"
                            placeholder="Not configured - Click Configure to set up"
                            style="background: #f8f9fa; border: 1px dashed #ccc; cursor: pointer;"
                            onclick="showConfigModal()" readonly>
                     <button class="btn btn-secondary" onclick="showConfigModal()" style="margin-top: 10px;">Configure</button>
+                </div>
+                <div class="config-item" style="margin-top: 15px;">
+                    <div class="config-label">
+                        PostgreSQL Bin Path
+                        <span id="postgres-version-badge" style="display:none; margin-left:8px; background:#336791; color:#fff; border-radius:3px; padding:1px 6px; font-size:11px; vertical-align:middle;"></span>
+                    </div>
+                    <input type="text" id="postgres-bin-path"
+                           placeholder="Not configured - Click Configure to set up"
+                           style="background: #f8f9fa; border: 1px dashed #ccc; cursor: pointer;"
+                           onclick="showPostgresConfigModal()" readonly>
+                    <button class="btn btn-secondary" onclick="showPostgresConfigModal()" style="margin-top: 10px;">Configure</button>
                 </div>
             </div>
             <div class="config-section" id="active-connection-info" style="display: none;">
@@ -63,8 +77,13 @@
             <div class="config-section">
                 <h3 style="font-size: 14px; margin-bottom: 10px; color: #333;">Import Dump</h3>
                 <div class="config-item">
-                    <div class="config-label">SQL Dump File</div>
-                    <input type="file" id="dump-file-input" accept=".sql" style="width: 100%; padding: 8px; margin-top: 5px;">
+                    <div class="config-label">Target Connection</div>
+                    <select id="import-target-connection-select" onchange="onImportConnectionChange()" style="width: 100%; padding: 8px; margin-top: 5px; border: 2px solid #e0e0e0; border-radius: 6px;">
+                        <option value="">Select target connection...</option>
+                    </select>
+                    <small id="import-engine-hint" style="color: #666; font-size: 12px; margin-top: 5px; display: block;"></small>
+                    <div class="config-label" style="margin-top: 10px;">SQL Dump File</div>
+                    <input type="file" id="dump-file-input" accept=".sql,.backup,.dump" style="width: 100%; padding: 8px; margin-top: 5px;">
                     <div class="config-label" style="margin-top: 10px;">Target Schema</div>
                     <select id="import-target-schema-select" style="width: 100%; padding: 8px; margin-top: 5px; border: 2px solid #e0e0e0; border-radius: 6px;">
                         <option value="">Select target schema...</option>
@@ -96,10 +115,22 @@
                 MySQL Bin Path is not configured. You can add connections, but <strong>clone, export, and import</strong> operations require MySQL tools.
                 <a onclick="closeModal('add-connection-modal'); showConfigModal();">Configure now</a>
             </div>
+            <div id="postgres-config-warning" class="config-warning-banner" style="display:none;">
+                <span class="warning-icon">⚠️</span>
+                PostgreSQL Bin Path is not configured. You can add connections, but <strong>clone, export, and import</strong> operations require pg_dump / pg_restore / psql.
+                <a onclick="closeModal('add-connection-modal'); showPostgresConfigModal();">Configure now</a>
+            </div>
             <form id="add-connection-form" onsubmit="addConnection(event)">
                 <div class="form-group">
                     <label>Name</label>
                     <input type="text" name="name" required placeholder="e.g., Production DB">
+                </div>
+                <div class="form-group">
+                    <label>Database Type</label>
+                    <select name="db_type" id="connection-db-type" required onchange="onDbTypeChange()" style="width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 6px; font-size: 14px;">
+                        <option value="mysql">MySQL</option>
+                        <option value="postgres">PostgreSQL</option>
+                    </select>
                 </div>
                 <div class="form-group">
                     <label>Host</label>
@@ -107,7 +138,7 @@
                 </div>
                 <div class="form-group">
                     <label>Port</label>
-                    <input type="number" name="port" value="3306" required>
+                    <input type="number" name="port" id="connection-port-input" value="3306" required>
                 </div>
                 <div class="form-group">
                     <label>User</label>
@@ -217,6 +248,128 @@
                 </div>
 
                 <button type="button" class="btn btn-link" onclick="showConfigChoiceScreen()" style="margin-top: 10px; color: #667eea; text-decoration: underline; background: none; border: none; cursor: pointer; padding: 5px;">← Back to options</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- PostgreSQL Config Modal (Download / Manual Path) -->
+    <div class="modal" id="postgres-config-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title">Configure PostgreSQL Bin Path</h2>
+                <button class="close-btn" onclick="closeModal('postgres-config-modal')">&times;</button>
+            </div>
+
+            <!-- Choice Screen -->
+            <div id="postgres-config-choice-screen" style="text-align: center; padding: 20px 0;">
+                <p style="color: #666; font-size: 14px; margin-bottom: 30px;">
+                    How would you like to configure PostgreSQL?
+                </p>
+                <div style="display: flex; gap: 15px; justify-content: center;">
+                    <button type="button" class="btn btn-choice btn-primary" onclick="handleShowPostgresDownloadForm()" style="flex: 1; max-width: 250px; padding: 20px; font-size: 16px;">
+                        Download PostgreSQL Automatically
+                    </button>
+                    <button type="button" class="btn btn-choice btn-secondary" onclick="handleShowPostgresManualForm()" style="flex: 1; max-width: 250px; padding: 20px; font-size: 16px;">
+                        I Will Select My Own PostgreSQL Directory
+                    </button>
+                </div>
+            </div>
+
+            <!-- Manual Path Form -->
+            <div id="postgres-manual-path-form" style="display: none;">
+                <form id="postgres-config-form" onsubmit="savePostgresConfig(event)">
+                    <div class="form-group">
+                        <label>PostgreSQL Bin Directory</label>
+                        <input type="text" id="postgres-bin-input" required
+                               placeholder="C:/Program Files/PostgreSQL/16/bin or /usr/bin"
+                               style="width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 6px; font-size: 14px;">
+                        <small style="color: #666; font-size: 12px; margin-top: 5px; display: block;">
+                            Must contain pg_dump, pg_restore, psql (Windows: .exe).
+                        </small>
+                    </div>
+                    <div id="postgres-config-result" class="result"></div>
+                    <div style="display: flex; gap: 10px; margin-top: 10px;">
+                        <button type="submit" class="btn" style="flex: 1; margin-bottom: 0;">Save Configuration</button>
+                        <button type="button" class="btn btn-secondary" onclick="testPostgresPath()" style="flex: 1; margin-bottom: 0; margin-left: 0;">Test Path</button>
+                    </div>
+                    <button type="button" class="btn btn-link" onclick="showPostgresConfigChoiceScreen()" style="margin-top: 10px; color: #667eea; text-decoration: underline; background: none; border: none; cursor: pointer; padding: 5px;">← Back to options</button>
+                </form>
+            </div>
+
+            <!-- Download Form -->
+            <div id="postgres-download-form" style="display: none;">
+                <h3 style="font-size: 16px; margin-bottom: 10px; color: #333;">Select PostgreSQL Version</h3>
+                <p style="color: #666; font-size: 13px; margin-bottom: 15px;">
+                    Choose an installed version or download a new one.
+                </p>
+
+                <div id="postgres-versions-loading" style="text-align: center; padding: 20px; color: #666;">
+                    <p>Loading versions...</p>
+                </div>
+
+                <div id="postgres-versions-list" style="display: none; max-height: 400px; overflow-y: auto; margin-bottom: 15px;">
+                    <div id="postgres-installed-versions-section" style="margin-bottom: 20px;">
+                        <h4 style="font-size: 14px; font-weight: 600; color: #333; margin-bottom: 10px; padding-bottom: 5px; border-bottom: 1px solid #e0e0e0;">Installed</h4>
+                        <div id="postgres-installed-versions-container"></div>
+                    </div>
+
+                    <div id="postgres-available-versions-section">
+                        <h4 style="font-size: 14px; font-weight: 600; color: #333; margin-bottom: 10px; padding-bottom: 5px; border-bottom: 1px solid #e0e0e0;">Available for Download</h4>
+                        <div id="postgres-available-versions-container"></div>
+                    </div>
+                </div>
+
+                <div id="postgres-download-unsupported" class="config-warning-banner" style="display:none;">
+                    <span class="warning-icon">ℹ️</span>
+                    Auto-download is only supported on Windows. On Linux/macOS, install via
+                    <code>apt install postgresql-client</code> / <code>brew install postgresql</code>
+                    and use <strong>Select My Own PostgreSQL Directory</strong>.
+                </div>
+
+                <div style="margin: 15px 0;">
+                    <label style="display: flex; align-items: center; cursor: pointer; color: #666; font-size: 14px;">
+                        <input type="checkbox" id="postgres-advanced-options-toggle" onchange="togglePostgresAdvancedOptions()" style="margin-right: 8px; width: 18px; height: 18px; cursor: pointer;">
+                        <span>Advanced Options</span>
+                    </label>
+                </div>
+
+                <div id="postgres-destination-directory-group" style="display: none; margin-top: 15px;">
+                    <div class="form-group">
+                        <label>Destination Directory (Optional)</label>
+                        <input type="text" id="postgres-dest-input" placeholder="Loading default path..." style="width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 6px; font-size: 14px;">
+                        <small style="color: #666; font-size: 12px; margin-top: 5px; display: block;">
+                            Leave empty to use the default location
+                        </small>
+                    </div>
+                </div>
+
+                <button type="button" class="btn btn-link" onclick="showPostgresConfigChoiceScreen()" style="margin-top: 10px; color: #667eea; text-decoration: underline; background: none; border: none; cursor: pointer; padding: 5px;">← Back to options</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- PostgreSQL Download Progress Modal -->
+    <div class="modal" id="postgres-download-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title">Downloading PostgreSQL</h2>
+                <button class="close-btn" onclick="closeModal('postgres-download-modal')">&times;</button>
+            </div>
+            <div style="text-align: center; padding: 20px;">
+                <p id="postgres-download-version" style="font-size: 16px; margin-bottom: 20px; font-weight: bold;">PostgreSQL 16.6</p>
+                <div class="progress-container" style="margin-bottom: 20px;">
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="postgres-download-progress-fill" style="width: 0%;">0%</div>
+                    </div>
+                </div>
+                <p id="postgres-download-status" style="color: #666; font-size: 14px;">Preparing download...</p>
+                <div id="postgres-download-result-message" class="result success" style="display: none; margin-top: 15px; text-align: left;">
+                    <strong id="postgres-download-result-title"></strong>
+                    <p id="postgres-download-result-detail" style="margin-top: 8px; font-size: 13px; word-break: break-all;"></p>
+                </div>
+                <p style="color: #999; font-size: 12px; margin-top: 20px;">This may take a few minutes depending on your connection speed.</p>
+                <button type="button" class="btn btn-danger" id="postgres-cancel-download-btn" onclick="cancelPostgresDownload()" style="margin-top: 10px;">Cancel</button>
+                <button type="button" class="btn btn-success" id="postgres-download-return-btn" onclick="returnFromPostgresDownload()" style="display: none; margin-top: 10px;">Return</button>
             </div>
         </div>
     </div>
