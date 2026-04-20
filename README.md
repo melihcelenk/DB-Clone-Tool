@@ -42,7 +42,7 @@ docker-compose up -d
 
 Open `http://localhost:5000` in your browser. MySQL 8.0.40 and PostgreSQL 16.6 client binaries are pre-installed in the container.
 
-> Use a specific version for reproducible deployments: `melihcelenk/db-clone-tool:0.3.0`
+> Use a specific version for reproducible deployments: `melihcelenk/db-clone-tool:0.3.1`
 
 ### Windows
 
