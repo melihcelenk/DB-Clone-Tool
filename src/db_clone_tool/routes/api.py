@@ -1,7 +1,7 @@
 """
 API routes for DB Clone Tool
 """
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, send_file
 from pathlib import Path
 import logging
 import uuid
@@ -147,11 +147,10 @@ def _test_mysql_connection(data):
 def _test_postgres_connection(data):
     """PostgreSQL connection test using psycopg."""
     import psycopg
-    # PG always connects to a specific DB — use provided one, else 'postgres'
-    # maintenance DB (guaranteed to exist).
+    from src.db_clone_tool.network import resolve_db_host
     target_db = data.get('database') or 'postgres'
     conninfo = (
-        f"host={data['host']} "
+        f"host={resolve_db_host(data['host'])} "
         f"port={int(data.get('port', 5432))} "
         f"user={data['user']} "
         f"password={data['password']} "
@@ -356,10 +355,27 @@ def get_postgres_bin_config():
                 if inst.get('bin_path') == path:
                     version = inst.get('version')
                     break
+            if not version:
+                version = _detect_pg_version_from_binary(path)
         return jsonify({"path": path, "version": version})
     except Exception as e:
         logger.error(f"Error getting postgres config: {e}")
         return jsonify({"error": str(e)}), 500
+
+
+def _detect_pg_version_from_binary(bin_path: str):
+    """Run pg_dump --version to extract the actual PostgreSQL version."""
+    import re
+    try:
+        exe = os.path.join(bin_path, 'pg_dump.exe' if os.name == 'nt' else 'pg_dump')
+        result = subprocess.run([exe, '--version'], capture_output=True, text=True, timeout=5)
+        if result.returncode == 0:
+            m = re.search(r'(\d+\.\d+)', result.stdout)
+            if m:
+                return m.group(1)
+    except Exception:
+        pass
+    return None
 
 
 @api_bp.route('/config/postgres-bin', methods=['POST'])
@@ -506,7 +522,8 @@ def _import_postgres_dump(connection_info, connection_id, target_schema, dump_pa
     env = os.environ.copy()
     env['PGPASSWORD'] = connection_info['password']
 
-    host = connection_info['host']
+    from src.db_clone_tool.network import resolve_db_host
+    host = resolve_db_host(connection_info['host'])
     port = str(connection_info.get('port', 5432))
     user = connection_info['user']
 
@@ -722,10 +739,11 @@ def _export_postgres_dump(connection_info, source_schema, export_path):
     env = os.environ.copy()
     env['PGPASSWORD'] = connection_info['password']
 
+    from src.db_clone_tool.network import resolve_db_host
     fmt_flag = '-Fp' if use_plain_sql else '-Fc'
     cmd = [
         pg_dump_path,
-        '-h', connection_info['host'],
+        '-h', resolve_db_host(connection_info['host']),
         '-p', str(connection_info.get('port', 5432)),
         '-U', connection_info['user'],
         fmt_flag,
@@ -757,6 +775,33 @@ def _export_postgres_dump(connection_info, source_schema, export_path):
         "file_size": file_size,
         "format": "plain" if use_plain_sql else "custom"
     })
+
+
+@api_bp.route('/export/download', methods=['GET'])
+def download_export():
+    """Stream an exported dump file to the browser.
+
+    Only files inside the app's tmp/exports directory are served to prevent
+    path traversal attacks.
+    """
+    file_path = request.args.get('file_path', '').strip()
+    if not file_path:
+        return jsonify({"success": False, "error": "file_path is required"}), 400
+
+    allowed_dir = (BASE_DIR / 'tmp' / 'exports').resolve()
+    requested = Path(file_path).resolve()
+
+    if not str(requested).startswith(str(allowed_dir)):
+        return jsonify({"success": False, "error": "Access denied"}), 403
+
+    if not requested.exists():
+        return jsonify({"success": False, "error": "File not found"}), 404
+
+    return send_file(
+        str(requested),
+        as_attachment=True,
+        download_name=requested.name,
+    )
 
 
 # MySQL Download Endpoints
@@ -1133,6 +1178,7 @@ def get_postgres_versions():
                 'bin_path': None,
                 'is_valid': None,
                 'install_path': None,
+                'download_available': pgdl._get_url_for_version(version) is not None,
             }
             if version in installed_map:
                 inst = installed_map[version]

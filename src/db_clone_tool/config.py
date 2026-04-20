@@ -47,28 +47,29 @@ def get_default_postgres_dir():
 
 
 def get_mysql_bin_path():
-    """Get MySQL bin directory path from environment variable or config file
+    """Get MySQL bin directory path from config file or environment variable.
 
     Priority:
-        1. DB_CLONE_MYSQL_BIN environment variable (Docker/production)
-        2. config.json file (native installations)
+        1. config.json file (explicit user choice via UI)
+        2. DB_CLONE_MYSQL_BIN environment variable (Docker/production default)
 
     Returns:
         str: MySQL bin path if configured, empty string otherwise
     """
-    env_path = os.environ.get('DB_CLONE_MYSQL_BIN', '')
-    if env_path and Path(env_path).exists():
-        return env_path
-
     if CONFIG_FILE.exists():
         try:
             with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
                 config_data = json.load(f)
-                return config_data.get('mysql_bin_path', '')
+                path = config_data.get('mysql_bin_path', '')
+                if path:
+                    return path
         except Exception:
             pass
 
-    # No default - user must configure
+    env_path = os.environ.get('DB_CLONE_MYSQL_BIN', '')
+    if env_path and Path(env_path).exists():
+        return env_path
+
     return ''
 
 
@@ -121,23 +122,25 @@ def get_mysql_path():
 
 
 def get_postgres_bin_path():
-    """Get PostgreSQL bin directory path from env var or config file.
+    """Get PostgreSQL bin directory path from config file or environment variable.
 
     Priority:
-        1. DB_CLONE_POSTGRES_BIN environment variable
-        2. config.json: postgres_bin_path
+        1. config.json: postgres_bin_path (explicit user choice via UI)
+        2. DB_CLONE_POSTGRES_BIN environment variable (Docker/production default)
     """
-    env_path = os.environ.get('DB_CLONE_POSTGRES_BIN', '')
-    if env_path and Path(env_path).exists():
-        return env_path
-
     if CONFIG_FILE.exists():
         try:
             with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
                 config_data = json.load(f)
-                return config_data.get('postgres_bin_path', '')
+                path = config_data.get('postgres_bin_path', '')
+                if path:
+                    return path
         except Exception:
             pass
+
+    env_path = os.environ.get('DB_CLONE_POSTGRES_BIN', '')
+    if env_path and Path(env_path).exists():
+        return env_path
 
     return ''
 
