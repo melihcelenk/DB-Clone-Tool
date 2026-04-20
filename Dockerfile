@@ -3,9 +3,7 @@
 FROM mysql:8.0.40 AS mysql-binaries
 
 # Stage 2: Extract PostgreSQL binaries from official Postgres image
-# Pin to 16.6 so DB_CLONE_POSTGRES_VERSION matches the "recommended" entry
-# in fetch_versions() — otherwise the UI won't surface it as "Installed".
-FROM postgres:16.6 AS postgres-binaries
+FROM postgres:17.8 AS postgres-binaries
 
 # Stage 3: Build application image
 FROM python:3.11-slim AS builder
@@ -31,7 +29,7 @@ ENV PYTHONUNBUFFERED=1 \
     DB_CLONE_MYSQL_BIN=/app/mysql/bin \
     DB_CLONE_MYSQL_VERSION=8.0.40 \
     DB_CLONE_POSTGRES_BIN=/app/postgres/bin \
-    DB_CLONE_POSTGRES_VERSION=16.6 \
+    DB_CLONE_POSTGRES_VERSION=17.8 \
     DB_CLONE_CONFIG_DIR=/app/config.local
 
 # Install runtime dependencies for MySQL (libncurses6) and PostgreSQL (libpq5)
@@ -56,11 +54,11 @@ COPY --from=mysql-binaries --chown=appuser:appuser \
     /app/mysql/bin/
 
 # Copy PostgreSQL binaries from stage 2 (real binaries live under
-# /usr/lib/postgresql/16/bin/ — /usr/bin/pg_dump is a wrapper script)
+# /usr/lib/postgresql/17/bin/ — /usr/bin/pg_dump is a wrapper script)
 COPY --from=postgres-binaries --chown=appuser:appuser \
-    /usr/lib/postgresql/16/bin/pg_dump \
-    /usr/lib/postgresql/16/bin/pg_restore \
-    /usr/lib/postgresql/16/bin/psql \
+    /usr/lib/postgresql/17/bin/pg_dump \
+    /usr/lib/postgresql/17/bin/pg_restore \
+    /usr/lib/postgresql/17/bin/psql \
     /app/postgres/bin/
 
 # Copy Python packages from builder

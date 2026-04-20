@@ -1219,6 +1219,11 @@ function renderPostgresVersionItem(versionInfo) {
         useBtn.textContent = 'Use';
         useBtn.onclick = () => usePostgresVersion(versionInfo.version, versionInfo.bin_path);
         actionsDiv.appendChild(useBtn);
+    } else if (versionInfo.download_available === false) {
+        const note = document.createElement('span');
+        note.style.cssText = 'font-size:11px;color:#999;';
+        note.textContent = 'Rebuild Docker image';
+        actionsDiv.appendChild(note);
     } else {
         const dlBtn = document.createElement('button');
         dlBtn.className = 'btn btn-success btn-small';
@@ -1693,7 +1698,19 @@ async function exportDumpFromModal(event) {
         
         if (result.success) {
             resultDiv.className = 'result success';
-            resultDiv.textContent = `Export completed! File saved to: ${result.file_path}`;
+            resultDiv.innerHTML = '';
+
+            const msg = document.createElement('div');
+            msg.textContent = 'Export completed!';
+            resultDiv.appendChild(msg);
+
+            const dlBtn = document.createElement('a');
+            dlBtn.href = '/api/export/download?file_path=' + encodeURIComponent(result.file_path);
+            dlBtn.download = result.file_path.split('/').pop().split('\\').pop();
+            dlBtn.className = 'btn btn-primary';
+            dlBtn.style.cssText = 'display:inline-block;margin-top:8px;';
+            dlBtn.textContent = 'Download File';
+            resultDiv.appendChild(dlBtn);
         } else {
             resultDiv.className = 'result error';
             resultDiv.textContent = 'Export failed: ' + (result.error || 'Unknown error');

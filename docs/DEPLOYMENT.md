@@ -26,7 +26,7 @@ docker run -d \
   -v ./tmp:/app/tmp \
   --name db-clone-tool \
   --restart unless-stopped \
-  melihcelenk/db-clone-tool:0.2.0
+  melihcelenk/db-clone-tool:0.3.1
 ```
 
 **Option B - Build from source:**
@@ -471,5 +471,5 @@ server {
 
 ---
 
-**Last Updated:** 2026-02-25
-**Version:** 0.2.0
+**Last Updated:** 2026-04-20
+**Version:** 0.3.1

@@ -9,40 +9,17 @@ from unittest.mock import patch, MagicMock
 class TestInstallDependencies:
     """Test dependency installation logic"""
 
-    @patch('subprocess.run')
-    def test_installs_dependencies_when_missing(self, mock_run):
-        """Test that dependencies are installed when requests is missing"""
-        # Mock requests as not installed
+    @patch('builtins.input', return_value='')
+    def test_installs_dependencies_when_missing(self, mock_input):
+        """Test that install_dependencies returns False and prompts user when a dependency is missing"""
         import sys
-        old_import = sys.modules.get('requests')
+        import run
 
-        def mock_import(name, *args, **kwargs):
-            if name == 'requests':
-                raise ImportError("No module named 'requests'")
-            return old_import
+        with patch.dict(sys.modules, {'requests': None}):
+            result = run.install_dependencies('python.exe')
 
-        with patch('builtins.__import__', side_effect=mock_import):
-            # Simulate missing requests
-            if 'requests' in sys.modules:
-                del sys.modules['requests']
-
-            # Import run module fresh
-            import importlib
-            import run
-
-            # Reload to get fresh import
-            importlib.reload(run)
-
-            # Call install_dependencies
-            run.install_dependencies('python.exe')
-
-            # Should have called pip install
-            mock_run.assert_called_once()
-            args = mock_run.call_args[0][0]
-            assert 'pip' in args
-            assert 'install' in args
-            assert '-e' in args
-            assert '.' in args
+        assert result is False
+        mock_input.assert_called_once()
 
     @patch('subprocess.run')
     def test_skips_install_when_all_present(self, mock_run):

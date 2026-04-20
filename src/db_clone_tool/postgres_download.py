@@ -41,10 +41,17 @@ def _pgdg_linux_url(version: str) -> str:
 # invalidates the URL, the download fails cleanly and the user falls back
 # to the "Manual Path" option (same UX as MySQL).
 #
+# PGDG apt-archive only mirrors older releases. Versions not yet archived
+# on Linux use None — the download UI will show them as Windows-only and
+# direct Linux/Docker users to rebuild the image instead.
 # Source: https://www.enterprisedb.com/download-postgresql-binaries
 POSTGRES_VERSIONS: Dict[str, Dict[str, Optional[str]]] = {
+    "17.8":  {"windows": "https://get.enterprisedb.com/postgresql/postgresql-17.8-1-windows-x64-binaries.zip",  "linux": None},
+    "17.5":  {"windows": "https://get.enterprisedb.com/postgresql/postgresql-17.5-1-windows-x64-binaries.zip",  "linux": _pgdg_linux_url("17.5")},
+    "17.4":  {"windows": "https://get.enterprisedb.com/postgresql/postgresql-17.4-1-windows-x64-binaries.zip",  "linux": _pgdg_linux_url("17.4")},
     "17.2":  {"windows": "https://get.enterprisedb.com/postgresql/postgresql-17.2-1-windows-x64-binaries.zip",  "linux": _pgdg_linux_url("17.2")},
     "17.0":  {"windows": "https://get.enterprisedb.com/postgresql/postgresql-17.0-1-windows-x64-binaries.zip",  "linux": _pgdg_linux_url("17.0")},
+    "16.8":  {"windows": "https://get.enterprisedb.com/postgresql/postgresql-16.8-1-windows-x64-binaries.zip",  "linux": None},
     "16.6":  {"windows": "https://get.enterprisedb.com/postgresql/postgresql-16.6-1-windows-x64-binaries.zip",  "linux": _pgdg_linux_url("16.6")},
     "16.4":  {"windows": "https://get.enterprisedb.com/postgresql/postgresql-16.4-1-windows-x64-binaries.zip",  "linux": _pgdg_linux_url("16.4")},
     "15.10": {"windows": "https://get.enterprisedb.com/postgresql/postgresql-15.10-1-windows-x64-binaries.zip", "linux": _pgdg_linux_url("15.10")},
@@ -52,7 +59,7 @@ POSTGRES_VERSIONS: Dict[str, Dict[str, Optional[str]]] = {
     "13.18": {"windows": "https://get.enterprisedb.com/postgresql/postgresql-13.18-1-windows-x64-binaries.zip", "linux": _pgdg_linux_url("13.18")},
 }
 
-RECOMMENDED_VERSION = "16.6"  # Stable, widely deployed, matches most hStroke test envs.
+RECOMMENDED_VERSION = "17.8"  # Latest stable release.
 
 
 def fetch_versions() -> List[str]:
