@@ -539,6 +539,7 @@ def _import_postgres_dump(connection_info, connection_id, target_schema, dump_pa
             '-h', host, '-p', port, '-U', user,
             '-d', target_schema,
             '--no-owner', '--no-privileges',
+            '--clean', '--if-exists',
             dump_path,
         ]
         process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
